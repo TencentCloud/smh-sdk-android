@@ -1,0 +1,17 @@
+$dokka.format:javadoc-v1
+$dokka.linkExtension:html
+$dokka.location:com.tencent.cloud.smh.api.adapter/SMHResponse.ApiError///PointingToDeclaration/com/tencent/cloud/smh/api/adapter/SMHResponse.ApiError.html
+$dokka.location:com.tencent.cloud.smh.api.adapter/SMHResponse.NetworkError///PointingToDeclaration/com/tencent/cloud/smh/api/adapter/SMHResponse.NetworkError.html
+$dokka.location:com.tencent.cloud.smh.api.adapter/SMHResponse.Success///PointingToDeclaration/com/tencent/cloud/smh/api/adapter/SMHResponse.Success.html
+$dokka.location:com.tencent.cloud.smh.api.adapter/SMHResponse.UnknownError///PointingToDeclaration/com/tencent/cloud/smh/api/adapter/SMHResponse.UnknownError.html
+$dokka.location:com.tencent.cloud.smh.api/SMHResult.Failure///PointingToDeclaration/com/tencent/cloud/smh/api/SMHResult.Failure.html
+$dokka.location:com.tencent.cloud.smh.api/SMHResult.Loading///PointingToDeclaration/com/tencent/cloud/smh/api/SMHResult.Loading.html
+$dokka.location:com.tencent.cloud.smh.api/SMHResult.Success///PointingToDeclaration/com/tencent/cloud/smh/api/SMHResult.Success.html
+$dokka.location:com.tencent.cloud.smh.api/SMHService.Companion///PointingToDeclaration/com/tencent/cloud/smh/api/SMHService.Companion.html
+$dokka.location:com.tencent.cloud.smh/UserCenter.Companion///PointingToDeclaration/com/tencent/cloud/smh/UserCenter.Companion.html
+com.tencent.cloud.smh
+com.tencent.cloud.smh.api
+com.tencent.cloud.smh.api.adapter
+com.tencent.cloud.smh.api.model
+com.tencent.cloud.smh.transfer
+
