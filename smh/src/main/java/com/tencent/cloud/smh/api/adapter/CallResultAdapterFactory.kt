@@ -28,8 +28,6 @@ import java.lang.reflect.Type
 /**
  * <p>
  * </p>
- * Created by wjielai on 1/29/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 class CallResultAdapterFactory: CallAdapter.Factory() {
     override fun get(

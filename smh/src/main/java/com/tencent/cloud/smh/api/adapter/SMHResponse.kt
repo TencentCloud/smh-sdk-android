@@ -24,8 +24,6 @@ import java.io.IOException
 /**
  * <p>
  * </p>
- * Created by wjielai on 1/29/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 sealed class SMHResponse<out T> {
 

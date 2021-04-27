@@ -31,8 +31,6 @@ import retrofit2.http.*
 /**
  * <p>
  * </p>
- * Created by wjielai on 1/26/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 interface SMHService {
 

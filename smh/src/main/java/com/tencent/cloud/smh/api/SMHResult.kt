@@ -21,8 +21,6 @@ package com.tencent.cloud.smh.api
 /**
  * <p>
  * </p>
- * Created by wjielai on 2/20/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 sealed class SMHResult<out T> {
     data class Success<out T>(val data: T) : SMHResult<T>()

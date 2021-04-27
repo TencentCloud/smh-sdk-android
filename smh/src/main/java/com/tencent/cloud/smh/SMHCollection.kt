@@ -41,8 +41,6 @@ import kotlin.coroutines.CoroutineContext
  * <p>
  *     SMH 资源库
  * </p>
- * Created by wjielai on 1/26/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 class SMHCollection @JvmOverloads constructor(
     private val context: Context,

@@ -21,8 +21,6 @@ package com.tencent.cloud.smh.api.adapter
 /**
  * <p>
  * </p>
- * Created by wjielai on 2/1/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 //class ResponseSerializer : JsonSerializer<SMHResponse<Any>>, JsonDeserializer<SMHResponse<Any>> {
 //    val gson = Gson()

@@ -12,8 +12,6 @@ import kotlin.coroutines.CoroutineContext
  * <p>
  *     SMH 资源库封装类，提供适合 Java8 CompletableFuture 风格的 API
  * </p>
- * Created by wjielai on 4/20/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 class SMHCollectionFuture internal constructor(
     private val smh: SMHCollection,

@@ -43,8 +43,8 @@ class SMHTest {
         smh = SMHCollection(
             context,
             user = StaticUser(
-                libraryId = "xxx",
-                librarySecret = "xxx"
+                libraryId = "your_library_id",
+                librarySecret = "your_library_secret"
             )
         )
     }

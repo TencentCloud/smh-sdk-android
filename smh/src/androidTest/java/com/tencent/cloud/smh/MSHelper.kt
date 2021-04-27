@@ -15,8 +15,6 @@ import kotlin.collections.ArrayList
 /**
  * <p>
  * </p>
- * Created by wjielai on 4/19/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 object MSHelper {
 

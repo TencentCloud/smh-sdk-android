@@ -49,8 +49,8 @@ public class SMHJavaTest {
         context = InstrumentationRegistry.getInstrumentation().getContext();
         smh = new SMHCollection(
                 context,
-                new StaticUser("xxx",
-                        "xxx"
+                new StaticUser("your_library_id",
+                        "your_library_secret"
                 )
         ).future();
     }
