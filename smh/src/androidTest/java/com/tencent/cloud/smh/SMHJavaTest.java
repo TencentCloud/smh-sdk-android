@@ -32,8 +32,6 @@ import kotlin.Triple;
 /**
  * <p>
  * </p>
- * Created by wjielai on 4/20/21.
- * Copyright 2010-2020 Tencent Cloud. All Rights Reserved.
  */
 
 @RunWith(AndroidJUnit4.class)
