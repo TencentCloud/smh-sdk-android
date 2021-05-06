@@ -2,7 +2,7 @@
 
 ### 集成 SDK
 
-使用 [Re](/releases) 下面的 aar 包集成。
+使用 [Release](https://github.com/TencentCloud/smh-sdk-android/releases) 下面的 aar 包集成。
 
 ### 开始使用
 
