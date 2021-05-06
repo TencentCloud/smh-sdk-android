@@ -1,2 +1,2 @@
-include ':app', ":smh"
-rootProject.name = "smh"
+include ":smh"
+rootProject.name = "smh-sdk-android"
