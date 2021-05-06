@@ -117,7 +117,7 @@ afterEvaluate {
                 // You can then customize attributes of the publication as shown below.
                 groupId = 'com.tencent.cloud'
                 artifactId = 'smh-android'
-                version = '1.0.0'
+                version = '1.0.1'
             }
             // Creates a Maven publication called “debug”.
             debug(MavenPublication) {
@@ -129,7 +129,7 @@ afterEvaluate {
 
                 groupId = 'com.tencent.cloud'
                 artifactId = 'smh-android-debug'
-                version = '1.0.0'
+                version = '1.0.1'
             }
         }
     }

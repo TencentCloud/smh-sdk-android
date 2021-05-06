@@ -2,6 +2,8 @@
 
 ### 集成 SDK
 
+使用 [Re](/releases) 下面的 aar 包集成。
+
 ### 开始使用
 
 #### 1. 初始化资源库
@@ -36,4 +38,4 @@ CompletableFuture<Uri> cf = smh.initDownload(content.name).thenCompose(downloadI
 
 ### 4. 其他接口
 
-参考 API 文档
+参考 [API 文档](javadoc.zip)
