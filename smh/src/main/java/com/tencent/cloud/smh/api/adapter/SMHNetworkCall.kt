@@ -47,7 +47,7 @@ class SMHNetworkCall<S: Any>(
                 val body = response.body()
                 val error = response.errorBody()
 
-                if (response.isSuccessful) {
+                if (response.isSuccessful || response.code() == 302) {
                     callback.onResponse(
                         this@SMHNetworkCall,
                         Response.success(SMHResponse.Success(body, response.headers().toMultimap()))
@@ -96,10 +96,6 @@ class SMHNetworkCall<S: Any>(
 
     override fun isExecuted(): Boolean {
         return call.isExecuted
-    }
-
-    override fun timeout(): Timeout {
-        return call.timeout()
     }
 
     override fun clone(): Call<SMHResponse<S>> {

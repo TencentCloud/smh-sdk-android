@@ -378,6 +378,7 @@ class SMHCollection @JvmOverloads constructor(
             filePath = dir.path?.let { "$it/$name" } ?: name,
             accessToken = accessToken.token
         )
+        resp.checkSuccess()
         val metaPrefix = "x-smh-meta-"
         return InitDownload(
             url = resp.header("Location"),

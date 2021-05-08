@@ -74,11 +74,11 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.4.1"
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.4.3'
 
-    api 'com.tencent.qcloud:cosxml:5.6.5'
-    api 'com.tencent.qcloud:cosxml-ktx:5.6.5'
+    api 'com.qcloud.cos:cos-android:5.6.5'
+    api 'com.qcloud.cos:cos-ktx:5.6.5'
 
-    implementation 'com.squareup.retrofit2:retrofit:2.9.0'
-    implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation 'com.squareup.retrofit2:retrofit:2.6.4'
+    implementation 'com.squareup.retrofit2:converter-gson:2.6.4'
     implementation 'com.squareup.okhttp3:logging-interceptor:3.10.0'
 
     // testImplementation for pure JVM unit tests
@@ -115,9 +115,9 @@ afterEvaluate {
                 artifact androidJavadocsJar
 
                 // You can then customize attributes of the publication as shown below.
-                groupId = 'com.tencent.cloud'
+                groupId = 'com.qcloud.cos'
                 artifactId = 'smh-android'
-                version = '1.0.1'
+                version = '1.0.0'
             }
             // Creates a Maven publication called “debug”.
             debug(MavenPublication) {
@@ -127,9 +127,9 @@ afterEvaluate {
                 artifact androidSourcesJar
                 artifact androidJavadocsJar
 
-                groupId = 'com.tencent.cloud'
+                groupId = 'com.qcloud.cos'
                 artifactId = 'smh-android-debug'
-                version = '1.0.1'
+                version = '1.0.0'
             }
         }
     }

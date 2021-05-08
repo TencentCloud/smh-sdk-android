@@ -25,11 +25,8 @@ buildscript {
 allprojects {
     repositories {
         google()
-        maven { url "https://jitpack.io" }
-        maven {
-            url "https://dl.bintray.com/tencentqcloudterminal/maven"
-        }
-        mavenLocal()
+        mavenCentral()
+//        mavenLocal()
         jcenter()
     }
 }
