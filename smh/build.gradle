@@ -103,6 +103,10 @@ task androidJavadocsJar(type: Jar, dependsOn: dokkaJavadoc) {
     from "$buildDir/dokka/javadoc"
 }
 
+project.extensions.add('artifactId', 'smh-android')
+project.extensions.add('artifactDesc', 'the core foundation for tencent cloud sdk')
+project.extensions.add('archiveFilePath', 'outputs/aar/smh-android-release.aar')
+
 afterEvaluate {
     publishing {
         publications {
@@ -134,3 +138,8 @@ afterEvaluate {
         }
     }
 }
+
+// assemble 先生成 aar 包
+// publishMavenAarPublicationToMavenLocal 发布到本地
+// publishMavenAarPublicationToMavenRepository 发布到 mavenCentral
+apply from: '../publish.gradle'
