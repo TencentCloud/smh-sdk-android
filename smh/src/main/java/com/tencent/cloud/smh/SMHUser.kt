@@ -55,11 +55,16 @@ interface SMHUser {
     suspend fun provideAccessToken(): AccessToken
 
     /**
-     * 获取用户是否登录成功
+     * 查询登录状态
      *
      * @return true 表示登录成功，false 表示失败
      */
-    fun isLogin(): Boolean
+    suspend fun isLogin(): Boolean
+
+    /**
+     * 是否曾经登录过
+     */
+    fun usedToHaveLogin(): Boolean
 
     /**
      * 发起用户登录
@@ -122,7 +127,11 @@ class StaticUser(libraryId: String, librarySecret: String) : SMHUser {
         this.library = Library(libraryId, librarySecret)
     }
 
-    override fun isLogin(): Boolean {
+    override suspend fun isLogin(): Boolean {
+        return library.libraryId.isNotEmpty() && library.LibrarySecret.isNotEmpty()
+    }
+
+    override fun usedToHaveLogin(): Boolean {
         return library.libraryId.isNotEmpty() && library.LibrarySecret.isNotEmpty()
     }
 
@@ -149,7 +158,9 @@ object NullSMHUser : SMHUser {
         throw SMHNoUserException
     }
 
-    override fun isLogin(): Boolean = false
+    override suspend fun isLogin(): Boolean = false
+
+    override fun usedToHaveLogin(): Boolean = false
 
     override suspend fun login(activity: Activity): SMHResult<Unit> {
         return SMHResult.Failure(UnsupportedOperationException())
