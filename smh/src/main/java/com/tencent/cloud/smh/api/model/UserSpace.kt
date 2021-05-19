@@ -44,9 +44,9 @@ data class UserSpace(
  * @property expires    空间过期事件
  */
 data class UserSpaceState(
-    private val capacity: String = "",
-    private val size: String = "",
-    private val expires: Int = -1,
+        val capacity: String = "",
+        val size: String = "",
+        val expires: Int = -1,
 ) {
     val capacityNumber: Pair<Double, Int>
         get() = parseBigInt(capacity)

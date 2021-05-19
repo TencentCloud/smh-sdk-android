@@ -7,7 +7,10 @@ import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import com.tencent.cloud.smh.api.SMHService
+import com.tencent.cloud.smh.api.dataOrNull
 import com.tencent.cloud.smh.api.model.Directory
+import com.tencent.cloud.smh.api.model.QuotaBody
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert
 import org.junit.Before
@@ -26,6 +29,7 @@ import kotlin.random.Random
 class SMHTest {
 
     lateinit var smh: SMHCollection
+    lateinit var user: SMHUser
     lateinit var context: Context
     private val defaultDirectory = Directory("default")
 
@@ -40,12 +44,13 @@ class SMHTest {
     @Before
     fun setup() {
         context = InstrumentationRegistry.getInstrumentation().context
+        user = StaticUser(
+                libraryId = "smh3pqmjuiqh57zc",
+                librarySecret = "a9595d62fd5264a4082dc49ec32522a9cf9150325c3a3be814016b4a33e6be4d"
+        )
         smh = SMHCollection(
-            context,
-            user = StaticUser(
-                libraryId = "your_library_id",
-                librarySecret = "your_library_secret"
-            )
+            context = context,
+            user = user
         )
     }
 
@@ -53,6 +58,7 @@ class SMHTest {
     fun testOneByOne() {
         testDirectory()
         testSingleUpload()
+        testAlbumCover()
         testHead()
         testDeleteResource()
         testMultipartUpload()
@@ -60,6 +66,39 @@ class SMHTest {
         testSymlink()
         testSMHList()
         testDeleteAllResources()
+    }
+
+    @Test
+    fun testUserSpace() {
+        runBlocking {
+            val createResponse = SMHService.shared.createQuota(
+                    user.libraryId,
+                    user.provideAccessToken().token,
+                    QuotaBody(
+                            capacity = "1099511627776",
+                            removeWhenExceed = true,
+                            removeAfterDays = 30,
+                            removeNewest = false
+                    )
+            )
+
+            val state = user.getSpaceState().dataOrNull
+            Assert.assertNotNull(state)
+            Assert.assertNotNull(state?.capacity)
+            Assert.assertNotNull(state?.capacityNumber)
+            Assert.assertNotNull(state?.size)
+            Assert.assertNotNull(state?.sizeNumber)
+            Assert.assertNotNull(state?.usagePercent)
+            Assert.assertNotNull(state?.remainSize)
+        }
+    }
+
+    @Test
+    fun testAlbumCover() {
+        runBlocking {
+            val coverUrl = smh.getAlbumCoverUrl(defaultDirectory.path!!)
+            Assert.assertNotNull(coverUrl)
+        }
     }
 
     @Test

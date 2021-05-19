@@ -23,6 +23,7 @@ import com.tencent.cloud.smh.api.SMHResult
 import com.tencent.cloud.smh.api.SMHService
 import com.tencent.cloud.smh.api.adapter.data
 import com.tencent.cloud.smh.api.model.*
+import java.lang.Exception
 
 /**
  * SMH 用户
@@ -76,12 +77,52 @@ interface SMHUser {
 }
 
 /**
+ * SMH 用户抽象类，可以扩展它，实现最基础的功能
+ *
+ */
+abstract class SMHSimpleUser : SMHUser {
+
+    override fun usedToHaveLogin(): Boolean = false
+
+    override suspend fun isLogin(): Boolean = false
+
+    override suspend fun login(activity: Activity): SMHResult<Unit> {
+        return SMHResult.Failure(UnsupportedOperationException())
+    }
+
+    override suspend fun getSpaceState(): SMHResult<UserSpaceState> {
+        // 从 SMH Server 获取配额信息
+
+        val accessToken = provideAccessToken()
+
+        try {
+            val capacity = SMHService.shared.getQuotaCapacity(
+                    libraryId = libraryId,
+                    spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                    accessToken = accessToken.token
+            ).data.capacity
+
+            val size = SMHService.shared.getSpaceSize(
+                    libraryId = libraryId,
+                    spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                    accessToken = accessToken.token
+            ).data.size
+
+            return SMHResult.Success(UserSpaceState(capacity = capacity, size = size))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return SMHResult.Failure(e)
+        }
+    }
+}
+
+/**
  * 静态用户，使用固定密钥初始化
  *
  * @param libraryId
  * @param librarySecret
  */
-class StaticUser(libraryId: String, librarySecret: String) : SMHUser {
+class StaticUser(libraryId: String, librarySecret: String) : SMHSimpleUser() {
 
     private var library = Library(libraryId, librarySecret)
 
@@ -119,10 +160,6 @@ class StaticUser(libraryId: String, librarySecret: String) : SMHUser {
         }
     }
 
-    override suspend fun getSpaceState(): SMHResult<UserSpaceState> {
-        return SMHResult.Success(UserSpaceState())
-    }
-
     fun update(libraryId: String, librarySecret: String) {
         this.library = Library(libraryId, librarySecret)
     }
@@ -134,36 +171,20 @@ class StaticUser(libraryId: String, librarySecret: String) : SMHUser {
     override fun usedToHaveLogin(): Boolean {
         return library.libraryId.isNotEmpty() && library.LibrarySecret.isNotEmpty()
     }
-
-    override suspend fun login(activity: Activity): SMHResult<Unit> {
-        return SMHResult.Failure(UnsupportedOperationException())
-    }
 }
 
 /**
  * 空用户，表示未登录状态
  */
-object NullSMHUser : SMHUser {
+object NullSMHUser : SMHSimpleUser() {
     override val libraryId: String
         get() = throw SMHNoUserException
 
     override val userSpace: UserSpace
         get() = throw SMHNoUserException
 
-    override suspend fun getSpaceState(): SMHResult<UserSpaceState> {
-        return SMHResult.Failure(SMHNoUserException)
-    }
-
     override suspend fun provideAccessToken(): AccessToken {
         throw SMHNoUserException
-    }
-
-    override suspend fun isLogin(): Boolean = false
-
-    override fun usedToHaveLogin(): Boolean = false
-
-    override suspend fun login(activity: Activity): SMHResult<Unit> {
-        return SMHResult.Failure(UnsupportedOperationException())
     }
 }
 

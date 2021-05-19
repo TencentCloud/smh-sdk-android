@@ -25,13 +25,10 @@ import com.tencent.cloud.smh.api.adapter.*
 import com.tencent.cloud.smh.api.dataOrNull
 import com.tencent.cloud.smh.api.model.*
 import com.tencent.cloud.smh.transfer.COSFileTransfer
-import com.tencent.cos.xml.exception.CosXmlClientException
-import com.tencent.cos.xml.exception.CosXmlServiceException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.withContext
-import java.io.IOException
 import java.math.BigDecimal
 import java.util.*
 import kotlin.collections.ArrayList
@@ -460,5 +457,36 @@ class SMHCollection @JvmOverloads constructor(
             force = if (overrideOnNameConflict) 1 else 0,
             linkTo = SymLinkBody(sourceFileName)
         ).data
+    }
+
+    /**
+     * 获取相簿封面链接
+     *
+     * @param albumName 相簿名，分相簿媒体库必须指定该参数，不分相簿媒体库不能指定该参数
+     * @param size 图片缩放大小
+     * @return 封面图片下载链接
+     */
+    @JvmOverloads
+    suspend fun getAlbumCoverUrl(
+       albumName: String? = null,
+       size: String? = null
+    ): String? {
+        val accessToken = ensureValidAK()
+
+        return if (albumName != null) {
+            SMHService.shared.getAlbumCoverUrlInAlbum(
+                    libraryId = libraryId,
+                    spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                    albumName = albumName,
+                    accessToken = accessToken.token
+            ).header("Location")
+        } else {
+            SMHService.shared.getAlbumCoverUrl(
+                    libraryId = libraryId,
+                    spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                    size = size,
+                    accessToken = accessToken.token
+            ).header("Location")
+        }
     }
 }

@@ -203,4 +203,45 @@ interface SMHService {
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
     ): SMHResponse<Unit>
+
+    @GET("api/v1/album/{libraryId}/{spaceId}/cover")
+    suspend fun getAlbumCoverUrl(
+            @Path("libraryId") libraryId: String,
+            @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+            @Query("size") size: String? = null,
+            @Query("access_token") accessToken: String,
+            @Query("user_id") userId: String? = null,
+    ): SMHResponse<Unit>
+
+    @GET("api/v1/album/{libraryId}/{spaceId}/cover/{albumName}")
+    suspend fun getAlbumCoverUrlInAlbum(
+            @Path("libraryId") libraryId: String,
+            @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+            @Path("albumName") albumName: String,
+            @Query("size") size: String? = null,
+            @Query("access_token") accessToken: String,
+            @Query("user_id") userId: String? = null,
+    ): SMHResponse<Unit>
+
+    @GET("api/v1/quota/{libraryId}/{spaceId}")
+    suspend fun getQuotaCapacity(
+            @Path("libraryId") libraryId: String,
+            @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+            @Query("access_token") accessToken: String,
+    ): SMHResponse<QuotaCapacity>
+
+    @POST("api/v1/quota/{libraryId}/")
+    suspend fun createQuota(
+            @Path("libraryId") libraryId: String,
+            @Query("access_token") accessToken: String,
+            @Body quotaBody: QuotaBody,
+    ): SMHResponse<QuotaResponse>
+
+    @GET("api/v1/space/{libraryId}/{spaceId}/size")
+    suspend fun getSpaceSize(
+            @Path("libraryId") libraryId: String,
+            @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+            @Query("access_token") accessToken: String,
+            @Query("user_id") userId: String? = null,
+    ): SMHResponse<SpaceSize>
 }
