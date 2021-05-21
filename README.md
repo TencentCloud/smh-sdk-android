@@ -2,7 +2,9 @@
 
 ### 集成 SDK
 
-使用 [Release](https://github.com/TencentCloud/smh-sdk-android/releases) 下面的 aar 包集成。
+```groovy
+implementation 'com.qcloud.cos:smh-android:1.+'
+```
 
 ### 开始使用
 
