@@ -16,26 +16,14 @@
  *
  */
 
-package com.tencent.cloud.smh.api.model
+package com.tencent.cloud.smh
 
-/**
- * 文件夹
- *
- * @property path 文件夹路径，为空时表示根目录
- */
-data class Directory(@JvmField val path: String? = null) {
-}
+const val X_SMH_TYPE_KEY = "x-smh-type"
+const val X_SMH_CREATION_TIME_KEY = "x-smh-creation-time"
+const val X_SMH_CONTENT_TYPE_KEY = "x-smh-content-type"
+const val X_SMH_SIZE_KEY = "x-smh-size"
+const val X_SMH_ETAG_KEY = "x-smh-etag"
+const val X_SMH_CRC64_KEY = "x-smh-crc64"
+const val X_SMH_META_KEY_PREFIX = "x-smh-meta-"
 
-
-data class CreateDirectoryResult(
-    val creationTime: String,
-)
-
-data class FilesPath(
-    val paths: List<FileId>
-)
-
-data class FileId(
-    val path: String,
-    val versionId: String? = null
-)
+const val LOCATION_KEY = "Location"

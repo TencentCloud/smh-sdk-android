@@ -11,12 +11,15 @@ import com.tencent.cloud.smh.api.SMHService
 import com.tencent.cloud.smh.api.dataOrNull
 import com.tencent.cloud.smh.api.model.Directory
 import com.tencent.cloud.smh.api.model.QuotaBody
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.lang.Exception
+import java.lang.Thread.sleep
 import kotlin.random.Random
 
 
@@ -32,6 +35,7 @@ class SMHTest {
     lateinit var user: SMHUser
     lateinit var context: Context
     private val defaultDirectory = Directory("default")
+    private val assistDirectory = Directory("assist")
 
     @Rule
     @JvmField
@@ -45,8 +49,8 @@ class SMHTest {
     fun setup() {
         context = InstrumentationRegistry.getInstrumentation().context
         user = StaticUser(
-                libraryId = "smh3pqmjuiqh57zc",
-                librarySecret = "a9595d62fd5264a4082dc49ec32522a9cf9150325c3a3be814016b4a33e6be4d"
+                libraryId = BuildConfig.SMH_ID,
+                librarySecret = BuildConfig.SMH_KEY
         )
         smh = SMHCollection(
             context = context,
@@ -82,14 +86,17 @@ class SMHTest {
                     )
             )
 
-            val state = user.getSpaceState().dataOrNull
+            // val state = user.getSpaceState().dataOrNull
+
+            val state = smh.getUserSpaceState()
+
             Assert.assertNotNull(state)
-            Assert.assertNotNull(state?.capacity)
-            Assert.assertNotNull(state?.capacityNumber)
-            Assert.assertNotNull(state?.size)
-            Assert.assertNotNull(state?.sizeNumber)
-            Assert.assertNotNull(state?.usagePercent)
-            Assert.assertNotNull(state?.remainSize)
+            Assert.assertNotNull(state.capacity)
+            Assert.assertNotNull(state.capacityNumber)
+            Assert.assertNotNull(state.size)
+            Assert.assertNotNull(state.sizeNumber)
+            Assert.assertNotNull(state.usagePercent)
+            Assert.assertNotNull(state.remainSize)
         }
     }
 
@@ -125,7 +132,7 @@ class SMHTest {
                 Assert.assertTrue(false)
             }
 
-            val directories = smh.listDirectory()
+            val directories = smh.listDirectory(Directory(newName))
             Assert.assertNull(directories.find {
                 it.path == newName
             })
@@ -154,7 +161,6 @@ class SMHTest {
             val initUpload = smh.initMultipartUpload(
                 name = name,
                 dir = defaultDirectory,
-                overrideOnNameConflict = true,
                 meta = meta
             )
             val metadata = smh.listMultipartUpload(initUpload.confirmKey)
@@ -190,12 +196,16 @@ class SMHTest {
                 Assert.assertTrue(e.statusCode == 409)
             }
 
+            try {
+                smh.createDirectory(assistDirectory)
+            } catch (e: SMHException) {
+            }
+
             val meta = mapOf("date" to "2021-1-1")
             // single upload
             val initUpload = smh.initUpload(
                 name = name,
                 dir = defaultDirectory,
-                overrideOnNameConflict = true,
                 meta = meta
             )
             val eTag = smh.upload(initUpload, uri)
@@ -205,18 +215,65 @@ class SMHTest {
             Assert.assertEquals(confirm.fileName, name)
 
             // list again
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            var directoryContents = smh.list(dir = defaultDirectory, paging = false)
             Assert.assertNotNull(directoryContents.contents.find {
                 it.name == "${defaultDirectory.path}/$name"
             })
 
-            val initDownload = smh.initDownload(name, dir = defaultDirectory)
-            meta.forEach { (t, u) ->
-                Assert.assertNotNull(initDownload.metaData?.get(t))
-                Assert.assertTrue(initDownload.metaData?.get(t)?.get(0) == u)
+            // 生成缩略图
+            val previewThumbnail = smh.getThumbnail(name = directoryContents.contents.first().name, size = 50)
+            Assert.assertNotNull(previewThumbnail)
+            Assert.assertNotNull(previewThumbnail.location)
+
+            // move file
+            val newName = "target_${System.currentTimeMillis()}.jpg"
+            val content = directoryContents.contents.first()
+            val renameFileResponse = smh.renameFile(targetDir = assistDirectory, targetName = newName, sourceName = content.name)
+            Assert.assertNotNull(renameFileResponse)
+            Assert.assertNotNull(renameFileResponse.path)
+
+            smh.renameFile(targetName = content.name, sourceDir = assistDirectory, sourceName = newName)
+
+            // move targetDir not exist
+            try {
+                val targetDirNotExistResponse = smh.renameFile(targetDir = Directory("not_exist"), targetName = newName, sourceName = content.name)
+            } catch (e: SMHException) {
+                Assert.assertEquals(e.statusCode, 404)
             }
+
+            // head file
+            val headFileResponse = smh.headFile(name, dir = defaultDirectory)
+            Assert.assertNotNull(headFileResponse)
+            Assert.assertNotNull(headFileResponse.contentType)
+            Assert.assertNotNull(headFileResponse.size)
+            Assert.assertNotNull(headFileResponse.creationTime)
+            Assert.assertNotNull(headFileResponse.eTag)
+            Assert.assertNotNull(headFileResponse.crc64)
+            Assert.assertNotNull(headFileResponse.type)
+//            meta.forEach { (t, u) ->
+//                Assert.assertNotNull(headFileResponse.metas?.get(t))
+//                Assert.assertTrue(headFileResponse.metas?.get(t) == u)
+//            }
+
+            // head file not exist
+            try {
+                smh.headFile("not_exist", defaultDirectory)
+            } catch (e: SMHException) {
+                Assert.assertEquals(e.statusCode, 404)
+            }
+
+            // download after rename
+//            val initDownload = smh.initDownload(name, dir = defaultDirectory)
+//            // val initDownload =  smh.initDownload("ori2.jpg", dir = defaultDirectory)
+//            meta.forEach { (t, u) ->
+//                Assert.assertNotNull(initDownload.metaData?.get(t))
+//                Assert.assertTrue(initDownload.metaData?.get(t)?.get(0) == u)
+//            }
         }
     }
+
+
+
 
     private suspend fun findUploadResource(): Triple<Uri, String, Long> {
         val assets = MSHelper.fetchMediaLists(
@@ -236,7 +293,6 @@ class SMHTest {
             val info = smh.getFileInfo(content.name, Directory())
             Assert.assertNotNull(info)
             Assert.assertNotNull(info?.cosUrl)
-
         }
     }
 
@@ -373,5 +429,12 @@ class SMHTest {
             val after = smh.listDirectory()
             Assert.assertTrue(after.isEmpty())
         }
+    }
+
+    @Test
+    fun testUploadTask() {
+
+
+
     }
 }

@@ -2,7 +2,7 @@
 
 ./gradlew :smh:clean
 ./gradlew :smh:assemble
-./gradlew :smh:publishMavenAarPublicationToMavenLocal
+./gradlew :smh:publishMavenAarPublicationToMavenRepository
 
 
 

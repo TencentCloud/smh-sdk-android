@@ -18,6 +18,8 @@
 
 package com.tencent.cloud.smh.api
 
+import java.lang.IllegalStateException
+
 /**
  * <p>
  * </p>
@@ -42,3 +44,10 @@ fun <T> SMHResult<T>.error(): Throwable? {
 
 val <T> SMHResult<T>.dataOrNull: T?
     get() = (this as? SMHResult.Success)?.data
+
+val <T> SMHResult<T>.data: T
+    get() = when (this) {
+        is SMHResult.Success -> this.data?: throw IllegalAccessException("data is null")
+        is SMHResult.Failure -> throw this.e
+        is SMHResult.Loading -> throw IllegalStateException("result is loading")
+    }

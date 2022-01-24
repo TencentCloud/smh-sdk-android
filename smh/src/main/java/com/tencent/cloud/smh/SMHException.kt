@@ -35,8 +35,15 @@ import java.math.BigDecimal
 open class SMHException(
     @SerializedName("code")
     @JvmField val errorCode: String? = null,
+    @SerializedName("inner")
+    @JvmField val innerCode: String? = null,
     @SerializedName("message")
     @JvmField val errorMessage: String? = null,
+
+    @SerializedName("requestId")
+    @JvmField val requestId: String? = null,
+    @SerializedName("smhRequestId")
+    @JvmField val smhRequestId: String? = null,
 
     @JvmField val statusCode: Int = 0,
 

@@ -32,7 +32,7 @@ import com.google.gson.annotations.SerializedName
 data class InitUpload(
     @JvmField val domain: String,
     @JvmField val path: String,
-    @JvmField val uploadId: String,
+    @JvmField val uploadId: String?,
     @JvmField val confirmKey: String,
     @JvmField val headers: Map<String, String>,
 )
@@ -43,14 +43,31 @@ data class InitUpload(
  * @property path 文件最终路径
  */
 data class ConfirmUpload(
-    @JvmField val path: List<String>? = null
+    @JvmField val path: List<String>,
+    @JvmField val name: String,
+    @JvmField val contentType: String?,
+    @JvmField val fileType: FileType?,
+    @JvmField val crc64: String?,
+    @JvmField val size: Long?,
+    @JvmField val type: MediaType? = null,
+    @JvmField val previewAsIcon: Boolean? = null,
+    @JvmField val previewByCI: Boolean? = null,
+    @JvmField val previewByDoc: Boolean? = null,
+    @JvmField val creationTime: String? = null,
+    @JvmField val modificationTime: String? = null,
+    @JvmField val eTag: String? = null,
+    @JvmField val metaData: Map<String, String>? = null,
 ) {
     val fileName: String?
-        get() = path?.lastOrNull()
+        get() = path.lastOrNull()
 
-    val key: String?
-        get() = path?.joinToString(separator = "/")
+    val key: String
+        get() = path.joinToString(separator = "/")
 }
+
+data class ConfirmUploadRequestBody(
+    @JvmField val crc64: String
+)
 
 /**
  * 分片上传信息
@@ -64,7 +81,8 @@ data class MultiUploadMetadata(
     @JvmField val parts: List<UploadPart>,
     @SerializedName("uploadPartInfo")
     @JvmField val uploader: InitUpload,
-    @JvmField var confirmKey: String
+    @JvmField var confirmKey: String,
+    @JvmField var confirmed: Boolean?,
 )
 
 /**

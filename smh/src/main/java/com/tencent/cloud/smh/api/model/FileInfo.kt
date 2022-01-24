@@ -26,10 +26,40 @@ package com.tencent.cloud.smh.api.model
  * @property linkTo 源文件，但文件类型为软链接时有效
  */
 data class FileInfo(
-    @JvmField val type: MediaType,
     @JvmField val cosUrl: String,
+    @JvmField val type: MediaType,
+    @JvmField val fileType: FileType?,
+    @JvmField val creationTime: String?,
+    @JvmField val modificationTime: String?,
+    @JvmField val contentType: String?,
+    @JvmField val size: Long?,
+    @JvmField val eTag: String?,
+    @JvmField val crc64: String?,
+    @JvmField val metaData: Map<String, String>,
+    @JvmField val previewAsIcon: Boolean?,
+    @JvmField val previewByCI: Boolean,
+    @JvmField val previewByDoc: Boolean,
     @JvmField val linkTo: List<String>?
 ) {
     val linkPath: String?
         get() = linkTo?.joinToString(separator = "/")
+}
+
+data class DirectoryInfo(
+    @JvmField val path: List<String>,
+    @JvmField val name: String,
+    @JvmField val type: MediaType,
+    @JvmField val userId: String,
+    @JvmField val creationTime: String?,
+    @JvmField val modificationTime: String?,
+    @JvmField val contentType: String?,
+    @JvmField val fileType: FileType?,
+    @JvmField val size: Long?,
+    @JvmField val eTag: String?,
+    @JvmField val crc64: String?,
+    @JvmField val versionId: String?,
+    @JvmField val historySize: Long?,
+    @JvmField val metaData: Map<String, String>,
+    @JvmField val localSync: LocalSync?,
+) {
 }

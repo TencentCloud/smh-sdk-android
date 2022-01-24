@@ -1,3 +1,5 @@
+package com.tencent.cloud.smh.api.model
+
 /*
  *
  *  * Copyright (C) 2021 Tencent, Inc.
@@ -16,26 +18,10 @@
  *
  */
 
-package com.tencent.cloud.smh.api.model
-
-/**
- * 文件夹
- *
- * @property path 文件夹路径，为空时表示根目录
- */
-data class Directory(@JvmField val path: String? = null) {
-}
-
-
-data class CreateDirectoryResult(
-    val creationTime: String,
+data class RenameFileBody(
+    @JvmField val from: String
 )
 
-data class FilesPath(
-    val paths: List<FileId>
-)
-
-data class FileId(
-    val path: String,
-    val versionId: String? = null
+data class RenameFileResponse(
+    @JvmField val path: List<String>?
 )

@@ -3,7 +3,6 @@ package com.tencent.cloud.smh;
 import android.content.Context;
 import android.net.Uri;
 import android.provider.MediaStore;
-import android.util.Pair;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -31,9 +30,9 @@ import kotlin.Triple;
 
 /**
  * <p>
+ *     SMHJavaTest
  * </p>
  */
-
 @RunWith(AndroidJUnit4.class)
 public class SMHJavaTest {
 
@@ -91,17 +90,17 @@ public class SMHJavaTest {
         meta.put("mkey", "mvalue");
         CompletableFuture<ConfirmUpload> cf = smh.initMultipartUpload(
                 asset.component2(),
-                meta, true, defaultDirectory
+                meta, null, defaultDirectory
         ).thenCompose(initUpload -> smh.listMultipartUpload(initUpload.confirmKey)
         ).thenCompose(multiUploadMetadata -> smh.multipartUpload(multiUploadMetadata,
                 asset.component1(), asset.component3()).thenApply(
                         etag -> new String[]{multiUploadMetadata.confirmKey, etag})
-        ).thenCompose(uploadInfo -> smh.confirmUpload(uploadInfo[0]));
+        ).thenCompose(uploadInfo -> smh.confirmUpload(uploadInfo[0], ""));
         // wait for finish
         cf.get();
 
         // list again
-        DirectoryContents directoryContents = smh.list(defaultDirectory, false).get();
+        DirectoryContents directoryContents = smh.list(defaultDirectory, Integer.MIN_VALUE).get();
         Boolean contains = false;
         for (MediaContent content : directoryContents.contents) {
             if (content.name.equals(defaultDirectory.path + "/" + asset.component2())) {
@@ -114,7 +113,7 @@ public class SMHJavaTest {
 
     @Test
     public void testFutureDownload() throws ExecutionException, InterruptedException {
-        DirectoryContents directoryContents = smh.list(defaultDirectory, false).get();
+        DirectoryContents directoryContents = smh.list(defaultDirectory, Integer.MIN_VALUE).get();
         MediaContent content = directoryContents.contents.get(0);
         CompletableFuture<Uri> cf = smh.initDownload(content.name).thenCompose(downloadInfo -> {
             String rawName = System.currentTimeMillis() + "_" + content.name.replace(
@@ -124,7 +123,7 @@ public class SMHJavaTest {
                     MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     rawName);
             Assert.assertNotNull(downloadInfo.metaData);
-            return smh.download(downloadInfo.url, contentUri).thenApply(Void -> contentUri);
+            return smh.download(downloadInfo.url, contentUri).thenApply(empty -> contentUri);
         }).whenComplete((contentUri, error) -> {
             Assert.assertNull(error);
             MSHelper.endAssetPending(context, contentUri);

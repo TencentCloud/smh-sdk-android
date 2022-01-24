@@ -21,53 +21,6 @@ class SMHCollectionFuture internal constructor(
 
     private val rootDirectory = smh.rootDirectory
 
-    /**
-     * 列出根文件夹列表
-     *
-     * @return 文件夹列表
-     */
-    fun listDirectory(): CompletableFuture<List<Directory>> = call { smh.listDirectory() }
-
-    /**
-     * 创建文件夹
-     *
-     * @param dir 文件夹
-     * @return 执行结果，true 表示创建成功，false 表示创建失败
-     */
-    fun createDirectory(dir: Directory): CompletableFuture<Boolean> =
-        call { smh.createDirectory(dir) }
-
-    /**
-     * 重命名文件夹
-     *
-     * @param target 目标文件夹
-     * @param source 源文件夹
-     * @return 执行结果，true 表示重命名成功，false 表示重命名失败
-     */
-    fun renameDirectory(target: Directory, source: Directory): CompletableFuture<Boolean> =
-        call { smh.renameDirectory(target, source) }
-
-    /**
-     * 删除文件夹
-     *
-     * @param dir 文件夹
-     * @return 执行结果，true 表示成功，false 表示失败
-     */
-    fun deleteDirectory(dir: Directory): CompletableFuture<Boolean> =
-        call { smh.deleteDirectory(dir) }
-
-    /**
-     * 列出文件列表
-     *
-     * @param dir 文件夹
-     * @param paging 是否分页，默认是分页列出
-     * @return 文件列表
-     */
-    @JvmOverloads
-    fun list(
-        dir: Directory = rootDirectory,
-        paging: Boolean = true
-    ): CompletableFuture<DirectoryContents> = call { smh.list(dir, paging) }
 
     /**
      * 查询服务是否可用
@@ -84,6 +37,86 @@ class SMHCollectionFuture internal constructor(
         call { smh.getSpaceQuotaRemainSize() }
 
     /**
+     * 获取用户空间状态
+     */
+    fun getUserSpaceState(): CompletableFuture<UserSpaceState> =
+        call { smh.getUserSpaceState() }
+
+    /**
+     * 列出根文件夹列表
+     *
+     * @return 文件夹列表
+     */
+    fun listDirectory(nextPage: Int, pageSize: Int): CompletableFuture<List<Directory>> = call { smh.listDirectory(nextPage, pageSize) }
+
+    /**
+     * 列出文件列表
+     *
+     * @param dir 文件夹
+     * @param paging 是否分页，默认是分页列出
+     * @return 文件列表
+     */
+    @JvmOverloads
+    fun list(
+        dir: Directory = rootDirectory,
+        nextPage: Int,
+        pageSize: Int,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+    ): CompletableFuture<DirectoryContents> = call { smh.list(dir, nextPage, pageSize, orderType, orderDirection) }
+
+
+    /**
+     * 创建文件夹
+     *
+     * @param dir 文件夹
+     * @return 执行结果，true 表示创建成功，false 表示创建失败
+     */
+    fun createDirectory(dir: Directory): CompletableFuture<CreateDirectoryResult> =
+        call { smh.createDirectory(dir) }
+
+    /**
+     * 重命名文件夹
+     *
+     * @param target 目标文件夹
+     * @param source 源文件夹
+     * @return 执行结果，true 表示重命名成功，false 表示重命名失败
+     */
+    fun renameDirectory(target: Directory, source: Directory): CompletableFuture<Boolean> =
+        call { smh.renameDirectory(target, source) }
+
+    /**
+     * 重命名或者移动文件
+     *
+     * @param targetName 目标文件名
+     * @param targetDir 目标文件夹，默认为根目录
+     * @param sourceName 源文件名
+     * @param sourceDir 源文件夹，默认为根目录
+     * @param overrideOnNameConflict 文件名冲突时是否覆盖
+     */
+    fun renameFile(targetName: String, targetDir: Directory = rootDirectory,
+                   sourceName: String, sourceDir: Directory = rootDirectory,
+                   conflictStrategy: ConflictStrategy?): CompletableFuture<RenameFileResponse?> =
+        call { smh.renameFile(targetName, targetDir, sourceName, sourceDir, conflictStrategy) }
+
+    /**
+     *
+     */
+    fun headFile( name: String,
+                  dir: Directory = rootDirectory): CompletableFuture<HeadFileContent> =
+        call { smh.headFile(name, dir) }
+
+    /**
+     * 删除文件夹
+     *
+     * @param dir 文件夹
+     * @return 执行结果，true 表示成功，false 表示失败
+     */
+    fun deleteDirectory(dir: Directory): CompletableFuture<Boolean> =
+        call { smh.deleteDirectory(dir) }
+
+
+    /**
      * 获取文件信息
      *
      * @param name 文件名，如果没有设置文件夹，则为文件路径
@@ -97,22 +130,36 @@ class SMHCollectionFuture internal constructor(
     ): CompletableFuture<FileInfo?> = call { smh.getFileInfo(name, dir) }
 
     /**
+     * 获取文件缩略图
+     *
+     * @param name 文件名，如果没有设置文件夹，则为文件路径
+     * @param dir 所在文件夹，默认是根目录下
+     * @param size 生成的预览图尺寸
+     *
+     */
+    fun getThumbnail(name: String,
+                            dir: Directory = rootDirectory,
+                            size: Int?
+    ): CompletableFuture<ThumbnailResult> = call { smh.getThumbnail(name, dir, size) }
+
+
+    /**
      * 初始化简单上传
      *
      * @param name 文件名，如果没有设置文件夹，则为文件路径
      * @param meta 文件元数据
      * @param dir 所在文件夹，默认是根目录下
-     * @param overrideOnNameConflict 存在重名文件时是覆盖还是重命名，true 表示覆盖，false 表示重命名
+     * @param conflictStrategy 存在重名文件时是覆盖还是重命名，true 表示覆盖，false 表示重命名
      * @return 上传信息
      */
     @JvmOverloads
     fun initUpload(
         name: String,
         meta: Map<String, String>? = null,
-        overrideOnNameConflict: Boolean = false,
+        conflictStrategy: ConflictStrategy? = null,
         dir: Directory = rootDirectory
     ): CompletableFuture<InitUpload> =
-        call { smh.initUpload(name, meta, dir, overrideOnNameConflict) }
+        call { smh.initUpload(name, meta, dir, conflictStrategy) }
 
     /**
      * 初始化分块上传。一般整个上传的代码如下：
@@ -137,10 +184,10 @@ class SMHCollectionFuture internal constructor(
     fun initMultipartUpload(
         name: String,
         meta: Map<String, String>? = null,
-        overrideOnNameConflict: Boolean = false,
+        conflictStrategy: ConflictStrategy? = null,
         dir: Directory = rootDirectory
     ): CompletableFuture<InitUpload> =
-        call { smh.initMultipartUpload(name, meta, dir, overrideOnNameConflict) }
+        call { smh.initMultipartUpload(name, meta, dir, conflictStrategy) }
 
     /**
      * 列出分片上传任务信息
@@ -192,8 +239,8 @@ class SMHCollectionFuture internal constructor(
      * @param confirmKey 上传任务的 confirmKey
      * @return 上传结果
      */
-    fun confirmUpload(confirmKey: String): CompletableFuture<ConfirmUpload> = call {
-        smh.confirmUpload(confirmKey)
+    fun confirmUpload(confirmKey: String, crc64: String): CompletableFuture<ConfirmUpload> = call {
+        smh.confirmUpload(confirmKey, crc64)
     }
 
     /**
@@ -234,8 +281,8 @@ class SMHCollectionFuture internal constructor(
      * @param dir 文件所在文件夹，默认为根目录
      * @return 执行结果
      */
-    fun delete(name: String): CompletableFuture<Boolean> = call {
-        smh.delete(name)
+    fun delete(name: String, permanent: Boolean): CompletableFuture<DeleteMediaResult> = call {
+        smh.delete(name = name, permanent = permanent)
     }
 
     /**
@@ -256,6 +303,19 @@ class SMHCollectionFuture internal constructor(
     ): CompletableFuture<ConfirmUpload> =
         call { smh.createSymLink(name, dir, sourceFileName, overrideOnNameConflict) }
 
+    /**
+     * 获取相簿封面链接
+     *
+     * @param albumName 相簿名，分相簿媒体库必须指定该参数，不分相簿媒体库不能指定该参数
+     * @param size 图片缩放大小
+     * @return 封面图片下载链接
+     */
+    fun getAlbumCoverUrl(
+        albumName: String? = null,
+        size: String? = null
+    ): CompletableFuture<String?> = call { smh.getAlbumCoverUrl(albumName, size) }
+
+
     private inline fun <T> call(
         crossinline action: suspend () -> T
     ): CompletableFuture<T> {
@@ -263,4 +323,5 @@ class SMHCollectionFuture internal constructor(
             action()
         }
     }
+
 }

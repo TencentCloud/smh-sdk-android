@@ -26,3 +26,4 @@ package com.tencent.cloud.smh.api.model
 data class SymLinkBody(
     @JvmField val linkTo: String
 )
+

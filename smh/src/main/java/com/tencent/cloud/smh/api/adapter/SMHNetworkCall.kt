@@ -50,7 +50,7 @@ class SMHNetworkCall<S: Any>(
                 if (response.isSuccessful || response.code() == 302) {
                     callback.onResponse(
                         this@SMHNetworkCall,
-                        Response.success(SMHResponse.Success(body, response.headers().toMultimap()))
+                        Response.success(SMHResponse.Success(body, response.headers().toMultimap(), response.code()))
                     )
                 } else {
                     val serverException = when {
@@ -65,6 +65,9 @@ class SMHNetworkCall<S: Any>(
                     var smhException = SMHException(
                         errorCode = serverException?.errorCode,
                         errorMessage = serverException?.errorMessage,
+                        innerCode = serverException?.innerCode,
+                        requestId = serverException?.requestId,
+                        smhRequestId = serverException?.smhRequestId,
                         statusCode = response.code(),
                         message = "${response.message()} - ${serverException?.errorMessage}",
                         headers = response.headers().toMultimap()

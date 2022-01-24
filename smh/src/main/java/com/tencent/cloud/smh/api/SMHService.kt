@@ -18,14 +18,22 @@
 
 package com.tencent.cloud.smh.api
 
+import android.util.Log
+import com.tencent.cloud.smh.BuildConfig
+import com.tencent.cloud.smh.api.SMHService.Companion.customHost
 import com.tencent.cloud.smh.api.adapter.CallResultAdapterFactory
 import com.tencent.cloud.smh.api.adapter.SMHResponse
 import com.tencent.cloud.smh.api.model.*
+import com.tencent.cloud.smh.interceptor.RetryInterceptor
+import com.tencent.qcloud.core.logger.QCloudLogger
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
+import java.util.concurrent.TimeUnit
 
 
 /**
@@ -34,31 +42,53 @@ import retrofit2.http.*
  */
 interface SMHService {
 
+
     companion object {
 
         val shared: SMHService
+        val httpClient: OkHttpClient
+        val retrofit: Retrofit
+
+        const val defaultHost = "api.tencentsmh.cn"
+        const val customHost: String = BuildConfig.CUSTOM_HOST
+
 
         init {
-//            val gson = GsonBuilder()
-//                .registerTypeHierarchyAdapter(SMHResponse::class.java, ResponseSerializer())
-//                .create()
 
             val logging = HttpLoggingInterceptor()
-            logging.level = HttpLoggingInterceptor.Level.BODY
+            logging.level = HttpLoggingInterceptor.Level.HEADERS
 
-            val httpClient = OkHttpClient.Builder()
-            httpClient.addInterceptor(logging)
-            httpClient.followRedirects(false)
+            val httpClientBuilder = OkHttpClient.Builder()
+                // .addInterceptor(EnvSwitcherInterceptor())
+                .addInterceptor(RetryInterceptor())
+                .addInterceptor(logging)
+                .followRedirects(false)
 
-            val retrofit = Retrofit.Builder()
-                .baseUrl("https://smh.tencentcs.com/")
+            httpClient = httpClientBuilder.build()
+
+            retrofit = Retrofit.Builder()
+                .baseUrl(baseUrl())
                 .addConverterFactory(GsonConverterFactory.create())
+                .addConverterFactory(EnumConverterFactory())
                 .addCallAdapterFactory(CallResultAdapterFactory())
-                .client(httpClient.build())
+                .client(httpClient)
                 .build()
 
             shared = retrofit.create(SMHService::class.java)
         }
+
+        fun host() = if (customHost.isNotEmpty()) {
+            customHost
+        } else {
+            defaultHost
+        }
+
+        fun baseUrl() = "https://${host()}/"
+
+        /**
+         * 是否为正式环境
+         */
+        fun isReleaseHost() = host() == defaultHost
     }
 
     @GET("api/v1/token")
@@ -85,7 +115,7 @@ interface SMHService {
         @Path("dirPath") dirPath: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
-    ): SMHResponse<Unit>
+    ): SMHResponse<CreateDirectoryResult>
 
     @PUT("api/v1/directory/{libraryId}/{spaceId}/{dirPath}")
     suspend fun renameDirectory(
@@ -94,7 +124,30 @@ interface SMHService {
         @Path("dirPath") dirPath: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
+        @Query("move_authority") moveAuthority: Boolean = false,
+        @Query("conflict_resolution_strategy") conflictStrategy: ConflictStrategy? = null,
         @Body from: RenameDirectoryBody
+    ): SMHResponse<Unit>
+
+    @PUT("api/v1/file/{libraryId}/{spaceId}/{filePath}")
+    suspend fun renameFile(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("filePath") filePath: String = "",
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Query("conflict_resolution_strategy") conflictStrategy: ConflictStrategy? = null,
+        @Body from: RenameFileBody
+    ): SMHResponse<RenameFileResponse>
+
+
+    @HEAD("api/v1/file/{libraryId}/{spaceId}/{filePath}")
+    suspend fun headFile(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("filePath") filePath: String,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
     ): SMHResponse<Unit>
 
     @GET("api/v1/directory/{libraryId}/{spaceId}/{dirPath}")
@@ -102,11 +155,89 @@ interface SMHService {
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
         @Path("dirPath") dirPath: String = "",
-        @Query("marker") marker: Int? = null,
-        @Query("limit") limit: String? = null,
+        @Query("page") page: Int,
+        @Query("page_size") pageSize: Int,
+        @Query("orderBy") orderBy: OrderType? = null,
+        @Query("orderByType") orderByType: OrderDirection? = null,
+        @Query("filter") directoryFilter: DirectoryFilter? = null,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
     ): SMHResponse<DirectoryContents>
+
+
+    @POST("api/v1/directory-history/{libraryId}/{spaceId}/delete")
+    suspend fun deleteHistoryMedia(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body historyIds: List<Long>,
+    ): SMHResponse<Unit>
+
+    @POST("api/v1/directory-history/{libraryId}/{spaceId}/latest-version/{historyId}")
+    suspend fun restoreHistoryMedia(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("historyId") historyId: Long,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<MediaContent>
+
+    @GET("api/v1/authority/{libraryId}/getRoleList")
+    suspend fun getRoleList(
+        @Path("libraryId") libraryId: String,
+        @Query("access_token") accessToken: String,
+    ): SMHResponse<List<Role>>
+
+    @GET("api/v1/authority/{libraryId}/authorized-directory")
+    suspend fun getMyAuthorizedDirectory(
+        @Path("libraryId") libraryId: String,
+        @Query("page") page: Int,
+        @Query("page_size") pageSize: Int,
+        @Query("order_by") orderBy: OrderType?,
+        @Query("order_by_type") orderByType: OrderDirection?,
+        @Query("access_token") accessToken: String,
+    ): SMHResponse<AuthorizedContent>
+
+    @POST("api/v1/search/{libraryId}/{spaceId}/space-contents")
+    suspend fun initSearch(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body initSearch: InitSearchMedia,
+    ): SMHResponse<SearchPartContent>
+
+    @GET("api/v1/search/{libraryId}/{spaceId}/{searchId}")
+    suspend fun searchMore(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("searchId") searchId: String,
+        @Query("marker") marker: Long,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<SearchPartContent>
+
+    @DELETE("api/v1/search/{libraryId}/{spaceId}/{searchId}")
+    suspend fun deleteSearch(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("searchId") searchId: String,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<Unit>
+
+    @GET("api/v1/recycled/{libraryId}/{spaceId}")
+    suspend fun listRecycled(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("page") page: Int,
+        @Query("page_size") pageSize: Int,
+        @Query("orderBy") orderBy: OrderType? = null,
+        @Query("orderByType") orderByType: OrderDirection? = null,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<RecycledContents>
 
     @DELETE("api/v1/directory/{libraryId}/{spaceId}/{dirPath}")
     suspend fun deleteDirectory(
@@ -121,10 +252,10 @@ interface SMHService {
     suspend fun initUpload(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
-        @Path("filePath", encoded = true) filePath: String,
+        @Path("filePath") filePath: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
-        @Query("force") force:Int = 0,
+        @Query("conflict_resolution_strategy") conflictStrategy: ConflictStrategy?,
         @HeaderMap metaData: Map<String, String> = emptyMap(),
     ): SMHResponse<InitUpload>
 
@@ -132,10 +263,10 @@ interface SMHService {
     suspend fun initMultipartUpload(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
-        @Path("filePath", encoded = true) filePath: String,
+        @Path("filePath") filePath: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
-        @Query("force") force:Int = 0,
+        @Query("conflict_resolution_strategy") conflictStrategy: ConflictStrategy?,
         @HeaderMap metaData: Map<String, String> = emptyMap(),
     ): SMHResponse<InitUpload>
 
@@ -148,6 +279,17 @@ interface SMHService {
         @Query("user_id") userId: String? = null,
     ): SMHResponse<MultiUploadMetadata>
 
+    // 文件缩略图
+    @GET("api/v1/file/{libraryId}/{spaceId}/{filePath}?preview")
+    suspend fun getThumbnail(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("filePath") filePath: String,
+        @Query("size") size: Int? = null,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<ThumbnailResult>
+
     @POST("api/v1/file/{libraryId}/{spaceId}/{confirmKey}?confirm")
     suspend fun confirmUpload(
         @Path("libraryId") libraryId: String,
@@ -155,6 +297,7 @@ interface SMHService {
         @Path("confirmKey") confirmKey: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
+        @Body confirmUploadRequestBody: ConfirmUploadRequestBody,
     ): SMHResponse<ConfirmUpload>
 
     @DELETE("api/v1/file/{libraryId}/{spaceId}/{confirmKey}?upload")
@@ -170,7 +313,7 @@ interface SMHService {
     suspend fun initDownload(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
-        @Path("filePath", encoded = true) filePath: String,
+        @Path("filePath") filePath: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
     ): SMHResponse<Unit>
@@ -179,16 +322,26 @@ interface SMHService {
     suspend fun getFileInfo(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
-        @Path("filePath", encoded = true) filePath: String,
+        @Path("filePath") filePath: String,
+        @Query("history_id") historyId: Long?,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
     ): SMHResponse<FileInfo>
+
+    @GET("api/v1/directory/{libraryId}/{spaceId}/{dirPath}?info")
+    suspend fun getDirectoryInfo(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("dirPath") dirPath: String,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<DirectoryInfo>
 
     @PUT("api/v1/file/{libraryId}/{spaceId}/{filePath}")
     suspend fun createSymLink(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
-        @Path("filePath", encoded = true) filePath: String,
+        @Path("filePath") filePath: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
         @Query("force") force:Int = 0,
@@ -199,10 +352,125 @@ interface SMHService {
     suspend fun deleteFile(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
-        @Path("filePath", encoded = true) filePath: String,
+        @Path("filePath") filePath: String,
+        @Query("permanent") permanent: Boolean?,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<DeleteMediaResult>
+
+    @DELETE("api/v1/recycled/{libraryId}/{spaceId}/{itemId}")
+    suspend fun deleteRecycledItem(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("itemId") itemId: Long,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
     ): SMHResponse<Unit>
+
+    @POST("api/v1/recycled/{libraryId}/{spaceId}?delete")
+    suspend fun deleteRecycledItems(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body itemIds: List<Long>
+    ): SMHResponse<Unit>
+
+    @POST("api/v1/recycled/{libraryId}/{spaceId}/{itemId}?restore")
+    suspend fun restoreRecycledItem(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("itemId") itemId: Long,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<RestorePath>
+
+    @POST("api/v1/recycled/{libraryId}/{spaceId}?restore")
+    suspend fun restoreRecycledItems(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body itemIds: List<Long>
+    ): SMHResponse<BatchResponse>
+
+    @POST("api/v1/batch/{libraryId}/{spaceId}?delete")
+    suspend fun batchDelete(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body items: List<BatchDeleteItem>
+    ): SMHResponse<BatchResponse>
+
+    @POST("api/v1/batch/{libraryId}/{spaceId}?copy")
+    suspend fun batchCopy(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body items: List<BatchCopyItem>
+    ): SMHResponse<BatchResponse>
+
+    @POST("api/v1/batch/{libraryId}/{spaceId}?move")
+    suspend fun batchMove(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body items: List<BatchMoveItem>
+    ): SMHResponse<BatchResponse>
+
+    @POST("api/v1/batch/{libraryId}/{spaceId}?copy")
+    suspend fun batchSaveToDisk(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("share_access_token") shareAccessToken: String,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+        @Body items: List<BatchSaveToDiskItem>
+    ): SMHResponse<BatchResponse>
+
+    @GET("api/v1/task/{libraryId}/{spaceId}/{taskIdList}")
+    suspend fun queryTasks(
+        @Path("taskIdList") taskIdList: String,
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+
+    ): SMHResponse<List<BatchResponse>> //
+
+    @POST("api/v1/authority/{libraryId}/{spaceId}/authorize/{dirPath}")
+    suspend fun addAuthorizeDirectory(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String,
+        @Path("dirPath") dirPath: String,
+        @Query("access_token") accessToken: String,
+        @Body authorizeToContent: AuthorizeToContent,
+
+        ): SMHResponse<Unit>
+
+    @POST("api/v1/authority/{libraryId}/{spaceId}/authorize/{dirPath}?delete")
+    suspend fun deleteAuthorityDirectory(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String,
+        @Path("dirPath") dirPath: String,
+        @Query("access_token") accessToken: String,
+        @Body authorizeToContent: AuthorizeToContent,
+
+        ): SMHResponse<Unit>
+
+
+
+    @DELETE("api/v1/recycled/{libraryId}/{spaceId}")
+    suspend fun clearRecycled(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<Unit>
+
 
     @GET("api/v1/album/{libraryId}/{spaceId}/cover")
     suspend fun getAlbumCoverUrl(
@@ -244,4 +512,45 @@ interface SMHService {
             @Query("access_token") accessToken: String,
             @Query("user_id") userId: String? = null,
     ): SMHResponse<SpaceSize>
+
+    @GET("api/v1/directory-history/{libraryId}/library-history")
+    suspend fun getHistoryStatus(
+        @Path("libraryId") libraryId: String,
+        @Query("access_token") accessToken: String,
+    ): SMHResponse<HistoryStatus>
+
+    @PUT("api/v1/directory-local-sync/{libraryId}/{spaceId}")
+    suspend fun putDirectoryLocalSync(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String?,
+        @Body body: PutDirectoryLocalSyncRequestBody
+    ): SMHResponse<PutDirectoryLocalSyncResponseBody>
+
+    @DELETE("api/v1/directory-local-sync/{libraryId}/{spaceId}/{syncId}")
+    suspend fun deleteDirectoryLocalSync(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String,
+        @Path("syncId") syncId: Int,
+        @Query("access_token") accessToken: String,
+    ): SMHResponse<Unit>
 }
+
+
+//class EnvSwitcherInterceptor: Interceptor {
+//
+//    override fun intercept(chain: Interceptor.Chain): Response {
+//        val originalRequest = chain.request()
+//        return if (customHost && originalRequest.url().host().contentEquals("smh.tencentcs.com")) {
+//            val devPath = "${SMHService.envPathPrefix}${originalRequest.url().encodedPath()}"
+//            val rwRequest = originalRequest.newBuilder()
+//                .url(originalRequest.url().newBuilder().encodedPath(devPath).build())
+//                .build()
+//            chain.proceed(rwRequest)
+//        } else {
+//            chain.proceed(originalRequest)
+//        }
+//    }
+//}
+

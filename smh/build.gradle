@@ -29,24 +29,42 @@ dokkaHtml.configure {
     }
 }
 
+def smhVersionName = "1.1.0"
+def smhVersionCode = 10100
+
 android {
     compileSdkVersion 29
     // buildToolsVersion "30.0.2"
 
     defaultConfig {
-        minSdkVersion 23
+        minSdkVersion 21
         targetSdkVersion 29
-        versionCode 10001
-        versionName "1.0.1"
+        versionCode smhVersionCode
+        versionName smhVersionName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
+
+        buildConfigField 'String', 'CUSTOM_HOST', "\"${getCustomApiHost()}\""
     }
 
     buildTypes {
+
+        debug {
+
+            it.buildConfigField 'String', 'SMH_ID', quotWrapper(System.getenv("SMH_ID"))
+            it.buildConfigField 'String', 'SMH_KEY', quotWrapper(System.getenv("SMH_KEY"))
+            it.buildConfigField 'String', 'SMH_VERSION_NAME', "\"$smhVersionName\""
+            it.buildConfigField 'int', 'SMH_VERSION_CODE', "$smhVersionCode"
+        }
+
         release {
+            debuggable true
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+            it.buildConfigField 'String', 'SMH_VERSION_NAME', "\"$smhVersionName\""
+            it.buildConfigField 'int', 'SMH_VERSION_CODE', "$smhVersionCode"
         }
     }
 
@@ -74,8 +92,16 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.4.1"
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.4.3'
 
-    api 'com.qcloud.cos:cos-android:5.6.5'
-    api 'com.qcloud.cos:cos-ktx:5.6.5'
+//    compile project(':foundation')
+//    compile (project(configuration: 'default', path: ':cos-android'))
+//    compile project(':cos-android-ktx')
+//    compileOnly project(':xmlAnnoation')
+
+    api 'com.qcloud.cos:cos-android:5.8.0'
+    api ('com.qcloud.cos:cos-ktx:5.6.5'){
+        exclude group: 'com.tencent.qcloud', module: 'beacon-android-release'
+        exclude group: 'com.qcloud.cos', module: 'cos-android'
+    }
 
     implementation 'com.squareup.retrofit2:retrofit:2.6.4'
     implementation 'com.squareup.retrofit2:converter-gson:2.6.4'
@@ -85,11 +111,28 @@ dependencies {
     testImplementation 'junit:junit:4.13'
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.4.1"
 
+
     // androidTestImplementation for Android instrumentation tests
     androidTestImplementation 'androidx.test.ext:junit:1.1.2'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
     androidTestImplementation 'androidx.test:rules:1.3.0'
     androidTestImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.4.1"
+
+}
+
+// 优先 系统环境变量 -> Gradle Property
+def getCustomApiHost() {
+
+    Properties localProperties = new Properties()
+    if (file('local.properties').exists()) {
+        localProperties.load(project.rootProject.file('local.properties').newDataInputStream())
+    }
+
+    String sysEnvCustomHost = System.getenv("CUSTOM_SMH_API_HOST")
+
+    return  (sysEnvCustomHost != null && !sysEnvCustomHost.isEmpty())? sysEnvCustomHost:
+            localProperties.hasProperty("CUSTOM_SMH_API_HOST")? localProperties.getProperty("CUSTOM_SMH_API_HOST"):
+            hasProperty("CUSTOM_SMH_API_HOST")? CUSTOM_SMH_API_HOST : ""
 
 }
 
@@ -103,40 +146,53 @@ task androidJavadocsJar(type: Jar, dependsOn: dokkaJavadoc) {
     from "$buildDir/dokka/javadoc"
 }
 
+task myTxxest() {
+
+    System.out.println("sonatypeUsername " + findProperty("ossrhUsername"))
+    System.out.println("sonatypePassword " + findProperty("ossrhPassword"))
+}
+
 project.extensions.add('artifactId', 'smh-android')
 project.extensions.add('artifactDesc', 'the core foundation for tencent cloud sdk')
 project.extensions.add('archiveFilePath', 'outputs/aar/smh-android-release.aar')
 
-afterEvaluate {
-    publishing {
-        publications {
-            // Creates a Maven publication called "release".
-            release(MavenPublication) {
-                // Applies the component for the release build variant.
-                from components.release
+//afterEvaluate {
+//    publishing {
+//        publications {
+//            // Creates a Maven publication called "release".
+//            release(MavenPublication) {
+//                // Applies the component for the release build variant.
+//                from components.release
+//
+//                artifact androidSourcesJar
+//                artifact androidJavadocsJar
+//
+//                // You can then customize attributes of the publication as shown below.
+//                groupId = 'com.qcloud.cos'
+//                artifactId = 'smh-android'
+//                version = '1.0.2'
+//            }
+//            // Creates a Maven publication called “debug”.
+//            debug(MavenPublication) {
+//                // Applies the component for the debug build variant.
+//                from components.debug
+//
+//                artifact androidSourcesJar
+//                artifact androidJavadocsJar
+//
+//                groupId = 'com.qcloud.cos'
+//                artifactId = 'smh-android-debug'
+//                version = '1.0.2'
+//            }
+//        }
+//    }
+//}
 
-                artifact androidSourcesJar
-                artifact androidJavadocsJar
-
-                // You can then customize attributes of the publication as shown below.
-                groupId = 'com.qcloud.cos'
-                artifactId = 'smh-android'
-                version = '1.0.0'
-            }
-            // Creates a Maven publication called “debug”.
-            debug(MavenPublication) {
-                // Applies the component for the debug build variant.
-                from components.debug
-
-                artifact androidSourcesJar
-                artifact androidJavadocsJar
-
-                groupId = 'com.qcloud.cos'
-                artifactId = 'smh-android-debug'
-                version = '1.0.0'
-            }
-        }
+static String quotWrapper(key) {
+    if (key == null) {
+        return "\"\""
     }
+    return "\"".concat(key).concat("\"")
 }
 
 // assemble 先生成 aar 包

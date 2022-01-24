@@ -108,7 +108,7 @@ data class AccessToken(
     @JvmField val expiresIn: Int
 ) {
     fun isValid(): Boolean {
-        return System.currentTimeMillis() < startTime + expiresIn * 1000 - 30 * 1000
+        return (System.currentTimeMillis() - startTime) / 1000 < expiresIn - 30
     }
 
     fun now(): AccessToken {

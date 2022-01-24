@@ -18,6 +18,7 @@
 
 package com.tencent.cloud.smh.api.adapter
 
+import com.tencent.cloud.smh.PoorNetworkException
 import com.tencent.cloud.smh.SMHException
 import java.io.IOException
 
@@ -27,7 +28,7 @@ import java.io.IOException
  */
 sealed class SMHResponse<out T> {
 
-    data class Success<out T>(val result: T?, val headers: Map<String, List<String>>): SMHResponse<T>()
+    data class Success<out T>(val result: T?, val headers: Map<String, List<String>>, val code: Int): SMHResponse<T>()
 
     data class ApiError(val err: SMHException, val headers: Map<String, List<String>>): SMHResponse<Nothing>()
 
@@ -37,6 +38,7 @@ sealed class SMHResponse<out T> {
 }
 
 val <T> SMHResponse<T>.isSuccess: Boolean
+
     get() = this is SMHResponse.Success
 
 val <T> SMHResponse<T>.dataOrNull: T?
@@ -68,7 +70,15 @@ val <T> SMHResponse<T>.data: T
     get() = when (this) {
         is SMHResponse.Success -> this.result ?: throw IllegalAccessException("data is null")
         is SMHResponse.ApiError -> throw this.err
-        is SMHResponse.NetworkError -> throw this.err
+        is SMHResponse.NetworkError -> throw PoorNetworkException
+        is SMHResponse.UnknownError -> throw this.err
+    }
+
+val <T> SMHResponse<T>.checkSuccess: T?
+    get() = when (this) {
+        is SMHResponse.Success -> this.result
+        is SMHResponse.ApiError -> throw this.err
+        is SMHResponse.NetworkError -> throw PoorNetworkException
         is SMHResponse.UnknownError -> throw this.err
     }
 
