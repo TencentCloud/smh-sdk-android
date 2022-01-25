@@ -55,12 +55,6 @@ interface SMHUser {
      */
     suspend fun provideAccessToken(): AccessToken
 
-    /**
-     * 强制获取一个新的访问凭证
-     *
-     * @return 访问凭证
-     */
-    suspend fun refreshAccessToken(): AccessToken
 
     /**
      * 查询登录状态
@@ -81,6 +75,16 @@ interface SMHUser {
      * @return 登录状态
      */
     suspend fun login(activity: Activity): SMHResult<Unit>
+}
+
+interface SMHRefreshTokenUser: SMHUser {
+
+    /**
+     * 强制获取一个新的访问凭证
+     *
+     * @return 访问凭证
+     */
+    suspend fun refreshAccessToken(): AccessToken
 }
 
 /**
@@ -167,14 +171,6 @@ class StaticUser(libraryId: String, librarySecret: String) : SMHSimpleUser() {
         }
     }
 
-    /**
-     * 强制获取一个新的访问凭证
-     *
-     * @return 访问凭证
-     */
-    override suspend fun refreshAccessToken(): AccessToken {
-        TODO("Not yet implemented")
-    }
 
     fun update(libraryId: String, librarySecret: String) {
         this.library = Library(libraryId, librarySecret)
@@ -201,15 +197,6 @@ object NullSMHUser : SMHSimpleUser() {
 
     override suspend fun provideAccessToken(): AccessToken {
         throw SMHNoUserException
-    }
-
-    /**
-     * 强制获取一个新的访问凭证
-     *
-     * @return 访问凭证
-     */
-    override suspend fun refreshAccessToken(): AccessToken {
-        TODO("Not yet implemented")
     }
 }
 

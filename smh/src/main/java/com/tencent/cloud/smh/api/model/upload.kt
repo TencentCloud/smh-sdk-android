@@ -66,7 +66,7 @@ data class ConfirmUpload(
 }
 
 data class ConfirmUploadRequestBody(
-    @JvmField val crc64: String
+    @JvmField val crc64: String?
 )
 
 /**

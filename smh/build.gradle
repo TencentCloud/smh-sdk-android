@@ -198,4 +198,4 @@ static String quotWrapper(key) {
 // assemble 先生成 aar 包
 // publishMavenAarPublicationToMavenLocal 发布到本地
 // publishMavenAarPublicationToMavenRepository 发布到 mavenCentral
-apply from: '../publish.gradle'
+// apply from: '../publish.gradle'

@@ -8,10 +8,3 @@ include ":cos-android-ktx"
 include ":foundation"
 include ":smh"
 
-//project(':smh-sdk-android').projectDir = new File(rootDir, '../smh-android/smh')
-project(':foundation').projectDir = new File(rootDir, '../../QCloudAndroid/library/QCloudFoundation/foundation')
-project(':cos-android').projectDir = new File(rootDir, '../../QCloudAndroid/library/QCloudCosXml/cosxml')
-project(':cos-android-ktx').projectDir = new File(rootDir, '../../QCloudAndroid/library/QCloudCosXml/cosxml-ktx')
-project(':xmlAnnoation').projectDir      = new File(rootDir, '../../QCloudAndroid/library/QCloudXml/xmlAnnoation')
-project(':xmlCompiler').projectDir       = new File(rootDir, '../../QCloudAndroid/library/QCloudXml/xmlCompiler')
-

@@ -42,12 +42,12 @@ class SMHCollectionFuture internal constructor(
     fun getUserSpaceState(): CompletableFuture<UserSpaceState> =
         call { smh.getUserSpaceState() }
 
-    /**
-     * 列出根文件夹列表
-     *
-     * @return 文件夹列表
-     */
-    fun listDirectory(nextPage: Int, pageSize: Int): CompletableFuture<List<Directory>> = call { smh.listDirectory(nextPage, pageSize) }
+//    /**
+//     * 列出根文件夹列表
+//     *
+//     * @return 文件夹列表
+//     */
+//    fun listDirectory(nextPage: Int, pageSize: Int): CompletableFuture<List<Directory>> = call { smh.listDirectory(nextPage, pageSize) }
 
     /**
      * 列出文件列表

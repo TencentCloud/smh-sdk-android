@@ -1,4 +1,4 @@
-/*
+     /*
  *
  *  * Copyright (C) 2021 Tencent, Inc.
  *  *
@@ -79,7 +79,11 @@ class SMHCollection @JvmOverloads constructor(
 
     @Synchronized
     private suspend fun ensureRefreshValidAK(): AccessToken {
-        return user.refreshAccessToken()
+        return if (user is SMHRefreshTokenUser) {
+            user.refreshAccessToken()
+        } else {
+            user.provideAccessToken()
+        }
     }
 
     fun spaceId() = user.userSpace.spaceId
@@ -127,23 +131,45 @@ class SMHCollection @JvmOverloads constructor(
 
 
     /**
-     * 列出根文件夹列表
-     *
-     * @param page 页码
-     * @param pageSize 一页的数据量
-     *
-     * @return 文件夹列表
+     * 列出所有的文件列表
      */
-    suspend fun listDirectory(page: Int,
-                              pageSize: Int): List<Directory> {
-        return list(
-            dir = rootDirectory,
-            page = page,
-            pageSize = pageSize,
-        ).contents.filter {
-            it.type == MediaType.dir
-        }.map {
-            Directory(path = it.name)
+    suspend fun listAll(
+
+        dir: Directory,
+        pageSize: Int = 50,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+        directoryFilter: DirectoryFilter? = null,
+    ): DirectoryContents {
+
+        var page = 1
+        val contents = ArrayList<MediaContent>()
+
+        while (true) {
+
+            val directoryContents = list(
+                dir = dir,
+                page = page,
+                pageSize = pageSize,
+                orderType = orderType,
+                orderDirection = orderDirection,
+                directoryFilter = directoryFilter,
+            )
+            contents.addAll(directoryContents.contents)
+            page++
+
+            // 已经最后一页了
+            if (directoryContents.contents.size < pageSize) {
+                return DirectoryContents(
+                    path = directoryContents.path,
+                    fileCount = directoryContents.fileCount,
+                    subDirCount = directoryContents.subDirCount,
+                    totalNum = directoryContents.totalNum,
+                    authorityList = directoryContents.authorityList,
+                    localSync = directoryContents.localSync,
+                    contents = contents
+                )
+            }
         }
     }
 
@@ -621,9 +647,15 @@ class SMHCollection @JvmOverloads constructor(
         name: String,
         meta: Map<String, String>? = null,
         dir: Directory = rootDirectory,
-        conflictStrategy: ConflictStrategy? = null
+        conflictStrategy: ConflictStrategy? = null,
+        overrideOnNameConflict: Boolean? = true
     ): InitUpload {
         val filePath = dir.path?.let { "$it/$name" } ?: name
+        val compatConflictStrategy = if (overrideOnNameConflict == true) {
+            ConflictStrategy.OVERWRITE
+        } else {
+            conflictStrategy
+        }
         return runWithBeaconReport("InitMultipartUpload", filePath) { accessToken ->
             val metaData = meta?.mapKeys { "x-smh-meta-${it.key}" }
             SMHService.shared.initMultipartUpload(
@@ -631,7 +663,7 @@ class SMHCollection @JvmOverloads constructor(
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
-                conflictStrategy = conflictStrategy,
+                conflictStrategy = compatConflictStrategy,
                 metaData = metaData ?: emptyMap()
             ).data
         }
@@ -703,7 +735,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param confirmKey 上传任务的 confirmKey
      * @return 上传结果
      */
-    suspend fun confirmUpload(confirmKey: String, crc64: String): ConfirmUpload {
+    suspend fun confirmUpload(confirmKey: String, crc64: String? = null): ConfirmUpload {
         return runWithBeaconReport("ConfirmUpload", confirmKey) { accessToken ->
             SMHService.shared.confirmUpload(
                 libraryId = libraryId,

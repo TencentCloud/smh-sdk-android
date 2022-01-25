@@ -23,6 +23,7 @@ package com.tencent.cloud.smh.transfer
 
 import android.content.Context
 import android.telephony.mbms.DownloadRequest
+import android.util.Log
 import bolts.CancellationTokenSource
 import com.tencent.cloud.smh.*
 import com.tencent.cloud.smh.track.*
@@ -185,7 +186,7 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
             if (!isManualPaused && !isManualCanceled) {
                 if (clientException != null || smhException != null) {
                     onTransferFailed(transferRequest, clientException, smhException)
-
+                    Log.e("QCloudHttp", "client ${clientException}, server ${smhException}")
                     // 上报传输失败
                     eventCode?.let {
                         FailureTransferTrackEvent(

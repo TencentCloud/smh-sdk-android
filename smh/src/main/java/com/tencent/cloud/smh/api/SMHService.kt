@@ -297,7 +297,7 @@ interface SMHService {
         @Path("confirmKey") confirmKey: String,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
-        @Body confirmUploadRequestBody: ConfirmUploadRequestBody,
+        @Body confirmUploadRequestBody: ConfirmUploadRequestBody?,
     ): SMHResponse<ConfirmUpload>
 
     @DELETE("api/v1/file/{libraryId}/{spaceId}/{confirmKey}?upload")
