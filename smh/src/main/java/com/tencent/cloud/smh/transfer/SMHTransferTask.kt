@@ -159,6 +159,7 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
         } catch (exception: SMHException) {
             smhException = exception
         } catch (exception: CosXmlClientException) {
+            QCloudLogger.e(tag(), "transfer with CosXmlClientException: code ${exception.errorCode}, message is ${exception.message}")
             clientException = when(exception.errorCode) {
                     200032, 200033, 200034, 200035, 200036, 20003, 20004 -> PoorNetworkException
                     10000 -> if (exception.message == "upload file does not exist") {

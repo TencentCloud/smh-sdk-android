@@ -33,7 +33,6 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
-import java.util.concurrent.TimeUnit
 
 
 /**
@@ -160,6 +159,17 @@ interface SMHService {
         @Query("orderBy") orderBy: OrderType? = null,
         @Query("orderByType") orderByType: OrderDirection? = null,
         @Query("filter") directoryFilter: DirectoryFilter? = null,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<DirectoryContents>
+
+    @GET("api/v1/directory/{libraryId}/{spaceId}/{dirPath}")
+    suspend fun listDirectory(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("dirPath") dirPath: String = "",
+        @Query("marker") marker: Long? = null,
+        @Query("limit") limit: Int? = null,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
     ): SMHResponse<DirectoryContents>

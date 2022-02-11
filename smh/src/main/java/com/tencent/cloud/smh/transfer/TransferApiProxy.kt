@@ -9,6 +9,7 @@ import com.tencent.cos.xml.ktx.suspendBlock
 import com.tencent.cos.xml.listener.CosXmlProgressListener
 import com.tencent.cos.xml.model.CosXmlRequest
 import com.tencent.cos.xml.model.`object`.*
+import retrofit2.http.Url
 import java.net.URL
 import java.util.concurrent.atomic.AtomicReference
 
@@ -109,6 +110,7 @@ class TransferApiProxy(
         return suspendBlock<GetObjectResult> {
 
             val httpUrl = URL(url)
+
             val lastIndex = localFullPath.lastIndexOf("/")
             val request = GetObjectRequest(
                 "",

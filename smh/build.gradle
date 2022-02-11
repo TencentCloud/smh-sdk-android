@@ -29,8 +29,8 @@ dokkaHtml.configure {
     }
 }
 
-def smhVersionName = "1.1.0"
-def smhVersionCode = 10100
+def smhVersionName = "1.1.1"
+def smhVersionCode = 10101
 
 android {
     compileSdkVersion 29

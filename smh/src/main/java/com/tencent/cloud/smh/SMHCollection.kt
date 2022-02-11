@@ -136,7 +136,7 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun listAll(
 
         dir: Directory,
-        pageSize: Int = 50,
+        pageSize: Int = 100,
         orderType: OrderType? = null,
         orderDirection: OrderDirection? = null,
         directoryFilter: DirectoryFilter? = null,
@@ -174,6 +174,43 @@ class SMHCollection @JvmOverloads constructor(
     }
 
     /**
+     * 通过 marker + limit 的方式列出所有的文件列表
+     */
+    suspend fun listAllWithMarker(
+
+        dir: Directory,
+        limit: Int = 100,
+    ): DirectoryContents {
+
+        var nextMarker: Long? = null
+        val contents = ArrayList<MediaContent>()
+
+        while (true) {
+
+            val directoryContents = listWithMarker(
+                dir = dir,
+                nextMarker = nextMarker,
+                limit = limit,
+            )
+            contents.addAll(directoryContents.contents)
+            nextMarker = directoryContents.nextMarker
+
+            // 已经最后一页了
+            if (nextMarker == null) {
+                return DirectoryContents(
+                    path = directoryContents.path,
+                    fileCount = directoryContents.fileCount,
+                    subDirCount = directoryContents.subDirCount,
+                    totalNum = directoryContents.totalNum,
+                    authorityList = directoryContents.authorityList,
+                    localSync = directoryContents.localSync,
+                    contents = contents,
+                )
+            }
+        }
+    }
+
+    /**
      * 列出文件列表
      *
      * @param dir 文件夹
@@ -196,7 +233,7 @@ class SMHCollection @JvmOverloads constructor(
     ): DirectoryContents {
 
 
-        val directoryContents = runWithBeaconReport("ListDirectory", dir.path) { accessToken ->
+        return runWithBeaconReport("ListDirectory", dir.path) { accessToken ->
             SMHService.shared.listDirectory(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
@@ -210,22 +247,40 @@ class SMHCollection @JvmOverloads constructor(
                 directoryFilter = directoryFilter,
             ).data
         }
-        val contents = ArrayList<MediaContent>()
-        val path = directoryContents.path
-        val fileCount = directoryContents.fileCount
-        val subDirCount = directoryContents.subDirCount
-        val totalNum = directoryContents.totalNum
-        val authorities = directoryContents.authorityList
-        contents.addAll(directoryContents.contents)
+    }
 
-        return DirectoryContents(
-            path = path,
-            fileCount = fileCount,
-            subDirCount = subDirCount,
-            totalNum = totalNum,
-            authorityList = authorities,
-            localSync = directoryContents.localSync,
-            contents = contents)
+    /**
+     * 通过 marker + limit 的方式列出文件列表
+     *
+     * 不支持排序
+     *
+     * @param dir 文件夹
+     * @param page 文件页码
+     * @param pageSize 一页的数据量
+     * @param orderType 排序方式
+     * @param orderDirection 排序方向
+     * @param directoryFilter 过滤类型
+     *
+     * @return 文件列表
+     */
+    @JvmOverloads
+    suspend fun listWithMarker(
+        dir: Directory,
+        nextMarker: Long? = null,
+        limit: Int? = null,
+    ): DirectoryContents {
+
+        return runWithBeaconReport("ListDirectoryWithMarker", dir.path) { accessToken ->
+            SMHService.shared.listDirectory(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                dirPath = dir.path ?: "",
+                accessToken = accessToken,
+                userId = userSpace.userId,
+                marker = nextMarker,
+                limit = limit,
+            ).data
+        }
     }
 
     /**

@@ -4,6 +4,7 @@ import com.tencent.cloud.smh.BuildConfig
 import com.tencent.cloud.smh.SMHClientException
 import com.tencent.cloud.smh.SMHException
 import com.tencent.cloud.smh.SMHUser
+import com.tencent.cos.xml.exception.CosXmlServiceException
 
 
 /**
@@ -20,6 +21,8 @@ const val SMHBeaconKey = "0DOU06CCWK49FGC7"
 const val ResultSuccess = "Success"
 const val ResultFailure = "Failure"
 
+const val ClientError = "Client"
+const val ServerError = "Server"
 
 class SMHSuccessRequestTrackEvent(
     requestName: String,
@@ -58,6 +61,7 @@ open class SMHSuccessTrackEvent(
     requestResult = ResultSuccess,
     requestId = null,
     smhRequestId = null,
+    errorType = null,
     errorMessage = null,
     errorCode = null,
     versionCode = BuildConfig.SMH_VERSION_CODE,
@@ -82,6 +86,7 @@ open class SMHFailureTrackEvent(
     requestResult = ResultFailure,
     requestId = extractRequestId(exception),
     smhRequestId = extractSMHRequestId(exception),
+    errorType = extractErrorType(exception),
     errorMessage = extractErrorMessage(exception),
     errorCode = extractErrorCode(exception),
     versionCode = BuildConfig.SMH_VERSION_CODE,
@@ -128,6 +133,7 @@ open class SuccessTransferTrackEvent(
     requestResult = ResultSuccess,
     requestId = null,
     smhRequestId = null,
+    errorType = null,
     errorMessage = null,
     errorCode = null,
     versionCode = BuildConfig.SMH_VERSION_CODE,
@@ -177,6 +183,7 @@ open class FailureTransferTrackEvent(
     requestResult = ResultFailure,
     requestId = extractRequestId(exception),
     smhRequestId = extractSMHRequestId(exception),
+    errorType = extractErrorType(exception),
     errorMessage = extractErrorMessage(exception),
     errorCode = extractErrorCode(exception),
     versionCode = BuildConfig.SMH_VERSION_CODE,
@@ -197,6 +204,7 @@ open class TransferTrackEvent(
     @SerializedName("request_result") val requestResult: String,
     @SerializedName("request_id") val requestId: String?,
     @SerializedName("smh_request_id") val smhRequestId: String?,
+    @SerializedName("error_type") val errorType: String?,
     @SerializedName("error_message") val errorMessage: String?,
     @SerializedName("error_code") val errorCode: String?,
     @SerializedName("smh_version_code") val versionCode: Int,
@@ -223,6 +231,7 @@ open class ApiTrackEvent(
     @SerializedName("request_result") val requestResult: String,
     @SerializedName("request_id") val requestId: String?,
     @SerializedName("smh_request_id") val smhRequestId: String?,
+    @SerializedName("error_type") val errorType: String?,
     @SerializedName("error_message") val errorMessage: String?,
     @SerializedName("error_code") val errorCode: String?,
     @SerializedName("smh_version_code") val versionCode: Int,
@@ -284,5 +293,13 @@ fun extractSMHRequestId(exception: Exception): String? {
         exception.smhRequestId
     } else {
         null
+    }
+}
+
+fun extractErrorType(exception: Exception): String {
+    return if (exception is SMHException || exception is CosXmlServiceException) {
+        ServerError
+    } else {
+        ClientError
     }
 }

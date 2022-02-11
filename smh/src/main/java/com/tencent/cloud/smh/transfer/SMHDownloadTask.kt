@@ -13,14 +13,13 @@ import com.tencent.cos.xml.model.CosXmlRequest
 import com.tencent.cos.xml.utils.DigestUtils
 import com.tencent.cos.xml.utils.FileUtils
 import com.tencent.qcloud.core.logger.QCloudLogger
-import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileNotFoundException
-import java.lang.Exception
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.Exception
 
 /**
  * 将 COS 对象下载到本地，支持续传、下载指定 Range。
@@ -83,7 +82,7 @@ class SMHDownloadTask(
      */
     private fun clearHasTransferPart() {
         val sharedPreferences = context.getSharedPreferences(TAG, Context.MODE_PRIVATE)
-        sharedPreferences.edit().remove(smhKey).apply()
+        clearDownloadRecord(sharedPreferences, downloadFileRequest)
     }
 
 
@@ -202,17 +201,17 @@ class SMHDownloadTask(
 
             if (mClearDownloadPart) {
                 QCloudLogger.i(TAG, "[%s]: clear has download part", taskId)
-                sharedPreferences.edit().remove(smhKey).apply()
+                clearDownloadRecord()
             }
         }
 
         // 1. 先根据 key 找到 DownloadRecord
         // 2. 校验 DownloadRecord 的有效性
         private fun hasDownloadPart(): Boolean {
-            val downloadRecordStr = sharedPreferences.getString(smhKey, null)?: return false
-            QCloudLogger.i(TAG, "[%s]: find DownloadRecord: %s", taskId, downloadRecordStr)
+
             return try {
-                val downloadRecord = DownloadRecord.toJson(downloadRecordStr)
+                val downloadRecord = getDownloadRecord()?: return false
+                QCloudLogger.i(TAG, "[%s]: find DownloadRecord: %s", taskId, downloadRecord)
                 if (downloadRecord.creationTime == null || downloadRecord.creationTime != creationTime ||
                     downloadRecord.eTag == null || downloadRecord.eTag != eTag ||
                     downloadRecord.crc64ecma != null && crc64ecma != null && downloadRecord.crc64ecma != crc64ecma) {
@@ -241,7 +240,9 @@ class SMHDownloadTask(
 
             // 续传
             if (hasDownloadPart) {
-                offset = localFile.length()
+                if (localFile.exists() && localFile.isFile) {
+                    offset = localFile.length()
+                }
                 QCloudLogger.i(TAG, "[%s]: has download part %d", taskId, offset)
             } else {
                 FileUtils.deleteFileIfExist(localFile.absolutePath)
@@ -252,16 +253,8 @@ class SMHDownloadTask(
         private suspend fun download() {
 
             // 保存下载记录
-            try {
-                sharedPreferences.edit().putString(
-                    smhKey, DownloadRecord.flatJson(
-                        DownloadRecord(creationTime, eTag, crc64ecma)
-                    )
-                ).apply()
-            } catch (e: JSONException) {
-                QCloudLogger.w(TAG, "[%s]: save DownloadRecord failed: %s", taskId, e.message)
-            }
-            QCloudLogger.i(TAG, "[%s]: start download", taskId)
+            insertDownloadRecord(DownloadRecord(creationTime, eTag, crc64ecma))
+            QCloudLogger.i(TAG, "[%s]: start download to %s", taskId, downloadFileRequest.localFullPath)
 
 //            val totalSize = fileInfo.size
 //            if (totalSize == null || totalSize == 0L || totalSize > offset ) {  //
@@ -270,6 +263,9 @@ class SMHDownloadTask(
             val etag = transferApiProxy.download(
                 // transferApiProxy.smhCollection.getDownloadAccessUrl(downloadFileRequest.key, historyId, true),
                 fileInfo.cosUrl,
+//                transferApiProxy.smhCollection.getDownloadAccessUrl(
+//                    smhKey, historyId, true
+//                ),
                 offset,
                 downloadFileRequest.localFullPath, requestReference) { progress, target ->
                 progressListener?.onProgress(
@@ -283,7 +279,16 @@ class SMHDownloadTask(
         }
 
         fun clearDownloadRecord() {
-            sharedPreferences.edit().remove(smhKey).apply()
+            Companion.clearDownloadRecord(sharedPreferences, downloadFileRequest)
+        }
+
+        fun getDownloadRecord(): DownloadRecord? {
+            return Companion.getDownloadRecord(sharedPreferences, downloadFileRequest)
+
+        }
+
+        fun insertDownloadRecord(downloadRecord: DownloadRecord) {
+            Companion.insertDownloadRecord(sharedPreferences, downloadFileRequest, downloadRecord)
         }
 
         private fun verifyContent() {
@@ -311,7 +316,7 @@ class SMHDownloadTask(
         }
     }
 
-    private class DownloadRecord(
+    class DownloadRecord(
         var creationTime: String?, //
         var eTag: String?,
         var crc64ecma: String?,
@@ -342,5 +347,36 @@ class SMHDownloadTask(
 
     companion object {
         private const val TAG = "SMHDownload"
+
+        fun clearDownloadRecord(sharedPreferences: SharedPreferences, downloadFileRequest: DownloadFileRequest) {
+            sharedPreferences.edit().remove(getSPKey(downloadFileRequest)).apply()
+        }
+
+        fun getDownloadRecord(sharedPreferences: SharedPreferences, downloadFileRequest: DownloadFileRequest): DownloadRecord? {
+            return try {
+                val downloadRecordStr = sharedPreferences.getString(getSPKey(downloadFileRequest), null)
+                downloadRecordStr?.let {
+                    DownloadRecord.toJson(downloadRecordStr)
+                }
+            } catch (exception: Exception) {
+                null
+            }
+
+        }
+
+        fun insertDownloadRecord(sharedPreferences: SharedPreferences, downloadFileRequest: DownloadFileRequest, downloadRecord: DownloadRecord) {
+            try {
+                sharedPreferences.edit().putString(
+                    getSPKey(downloadFileRequest), DownloadRecord.flatJson(
+                        downloadRecord
+                    )
+                ).apply()
+            } catch (e: JSONException) {
+                e.printStackTrace()
+            }
+        }
+
+        private fun getSPKey(downloadFileRequest: DownloadFileRequest) =
+            "[${downloadFileRequest.key}]->[${downloadFileRequest.localFullPath}]:[${downloadFileRequest.historyId}]"
     }
 }
