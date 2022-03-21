@@ -108,7 +108,7 @@ dependencies {
     implementation 'com.squareup.okhttp3:logging-interceptor:3.10.0'
 
 
-    compileOnly 'com.tencent.beacon:beacon-android-release:4.2.57.1'
+    // compileOnly 'com.tencent.beacon:beacon-android-release:4.2.57.1'
 
 
     // testImplementation for pure JVM unit tests
