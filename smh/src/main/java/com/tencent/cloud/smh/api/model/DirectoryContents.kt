@@ -41,7 +41,8 @@ data class DirectoryContents(
     @JvmField val localSync: LocalSync?,
     @JvmField val authorityList: MediaAuthority?,
     @JvmField val contents: List<MediaContent>,
-    @JvmField val nextMarker: Long? = null,
+    @JvmField val eTag: String? = null,
+    @JvmField val nextMarker: String? = null,
 )
 
 /**
@@ -52,7 +53,9 @@ data class DirectoryContents(
  */
 data class RecycledContents(
     @JvmField val totalNum: Int = -1,
-    @JvmField val contents: List<RecycledItem>
+    @JvmField val contents: List<RecycledItem>,
+    val eTag: String? = null,
+    val nextMarker: String? = null,
 )
 
 /**

@@ -91,7 +91,9 @@ data class RecycledAuthority(
 
 data class AuthorizedContent(
     val totalNum: Int,
-    val contents: List<AuthorizedItem>
+    val contents: List<AuthorizedItem>,
+    val eTag: String? = null,
+    val nextMarker: String? = null,
 )
 
 

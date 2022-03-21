@@ -6,6 +6,7 @@ import android.text.TextUtils
 import bolts.CancellationTokenSource
 import com.tencent.cloud.smh.ClientInternalException
 import com.tencent.cloud.smh.ClientManualCancelException
+import com.tencent.cloud.smh.SMHClientException
 import com.tencent.cloud.smh.SMHCollection
 import com.tencent.cloud.smh.api.model.FileInfo
 import com.tencent.cos.xml.listener.CosXmlProgressListener
@@ -13,11 +14,13 @@ import com.tencent.cos.xml.model.CosXmlRequest
 import com.tencent.cos.xml.utils.DigestUtils
 import com.tencent.cos.xml.utils.FileUtils
 import com.tencent.qcloud.core.logger.QCloudLogger
+import okio.Buffer
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileNotFoundException
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.Exception
 
@@ -28,8 +31,6 @@ import kotlin.Exception
  *
  * 需要的 COS 权限：HeadObject、GetObject
  *
- *
- *
  * Created by rickenwang on 2021/6/30.
  * Copyright 2010-2021 Tencent Cloud. All Rights Reserved.
  */
@@ -39,7 +40,7 @@ class SMHDownloadTask(
     private val downloadFileRequest: DownloadFileRequest,
 ) : SMHTransferTask(context, smhCollection, downloadFileRequest) {
 
-    private var simpleDownloadTask: SimpleDownloadTask? = null
+    private var simpleDownloadTask: IDownloadTask? = null
     override fun tag(): String {
         return TAG
     }
@@ -91,13 +92,18 @@ class SMHDownloadTask(
     }
 
     override suspend fun execute(): SMHTransferResult {
-        return simpleDownload()
+        return if (downloadFileRequest.localFullPath != null) {
+            simpleDownload()
+        } else {
+            downloadToBuffer()
+        }
     }
 
 
     // 简单下载
     private suspend fun simpleDownload(): DownloadFileResult {
-        val downloadTask = SimpleDownloadTask(context, transferApiProxy, downloadFileRequest, cts, verifyContent)
+        val downloadTask = SimpleDownloadTask(context, transferApiProxy, downloadFileRequest, cts, verifyContent,
+            mExecutor = mExecutor)
         downloadTask.setTaskId(taskId)
         downloadTask.smhKey = smhKey
         downloadTask.progressListener = CosXmlProgressListener { progress, target ->
@@ -107,6 +113,60 @@ class SMHDownloadTask(
         return downloadTask.execute()
     }
 
+    private suspend fun downloadToBuffer(): DownloadFileResult {
+
+        val downloadToBufferTask = DownloadToBufferTask(context, downloadFileRequest,
+            smhCollection, cts)
+        return downloadToBufferTask.execute()
+    }
+
+    interface IDownloadTask {
+
+        suspend fun execute(): DownloadFileResult
+
+        fun cancel()
+    }
+
+    private class DownloadToBufferTask(
+        val context: Context,
+        val downloadFileRequest: DownloadFileRequest,
+        val smhCollection: SMHCollection,
+        val cts: CancellationTokenSource
+    ): IDownloadTask {
+
+        private var mDownloadRequest: DownloadRequest? = null
+
+        override suspend fun execute(): DownloadFileResult {
+
+            val initDownload = smhCollection.initDownload(downloadFileRequest.key)
+            val downloadUrl = initDownload.url?: throw SMHClientException("DownloadUrlIsNull")
+
+            val downloadRequest = DownloadRequest(downloadUrl, downloadFileRequest.progressListener)
+            downloadRequest.httpHeaders.putAll(downloadFileRequest.httpHeaders)
+            mDownloadRequest = downloadRequest
+            // 检查是否取消
+            checkoutManualCanceled()
+            val downloadResult = smhCollection.download(downloadRequest)
+            return DownloadFileResult(
+                content = downloadResult.inputStream,
+                downloadFileRequest.key,
+                null)
+        }
+
+        override fun cancel() {
+            cts.cancel()
+            mDownloadRequest?.let {
+                smhCollection.cancel(it)
+            }
+        }
+
+        private fun checkoutManualCanceled() {
+            if (cts.isCancellationRequested) {
+                throw ClientManualCancelException
+            }
+        }
+
+    }
 
     private class SimpleDownloadTask(
         val context: Context,
@@ -115,7 +175,8 @@ class SMHDownloadTask(
         val cts: CancellationTokenSource,
         val verifyContent: Boolean,
         val mClearDownloadPart: Boolean = false,
-    ) {
+        val mExecutor: Executor? = null,
+    ): IDownloadTask {
         lateinit var smhKey: String
         var historyId: Long? = null
         var progressListener: CosXmlProgressListener? = null
@@ -136,7 +197,7 @@ class SMHDownloadTask(
             historyId = downloadFileRequest.historyId
         }
 
-        suspend fun execute(): DownloadFileResult {
+        override suspend fun execute(): DownloadFileResult {
 
             // 1. 生成下载的参数信息
             checkoutManualCanceled()
@@ -152,7 +213,7 @@ class SMHDownloadTask(
 
             // 4. 执行下载
             checkoutManualCanceled()
-            download()
+            downloadToFilePath()
 
             // 5. 文件 CRC 校验或者 MD5 校验
             //    校验失败后需要删除下载文件
@@ -167,7 +228,7 @@ class SMHDownloadTask(
             }
 
             return DownloadFileResult(
-                smhKey, crc64ecma
+                null, smhKey, crc64ecma
             )
         }
 
@@ -178,7 +239,7 @@ class SMHDownloadTask(
             }
         }
 
-        fun cancel() {
+        override fun cancel() {
             cts.cancel()
             requestReference.get()?.let {
                 transferApiProxy.cancel(it)
@@ -250,8 +311,9 @@ class SMHDownloadTask(
         }
 
         // 执行 GetObjectRequest 请求
-        private suspend fun download() {
+        private suspend fun downloadToFilePath() {
 
+            val filePath = downloadFileRequest.localFullPath?: return
             // 保存下载记录
             insertDownloadRecord(DownloadRecord(creationTime, eTag, crc64ecma))
             QCloudLogger.i(TAG, "[%s]: start download to %s", taskId, downloadFileRequest.localFullPath)
@@ -267,7 +329,9 @@ class SMHDownloadTask(
 //                    smhKey, historyId, true
 //                ),
                 offset,
-                downloadFileRequest.localFullPath, requestReference) { progress, target ->
+                filePath,
+                requestReference,
+                executor = mExecutor) { progress, target ->
                 progressListener?.onProgress(
                     offset + progress,
                     offset + target

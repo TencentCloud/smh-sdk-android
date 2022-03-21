@@ -17,6 +17,7 @@
  */
 
 package com.tencent.cloud.smh.api.model
+import com.tencent.cloud.smh.smhKey
 
 /**
  * 文件夹
@@ -24,6 +25,12 @@ package com.tencent.cloud.smh.api.model
  * @property path 文件夹路径，为空时表示根目录
  */
 data class Directory(@JvmField val path: String? = null) {
+
+    fun subDirectory(name: String): Directory {
+        return Directory(path = smhKey(path, name))
+    }
+
+    fun directoryPath() = path?: ""
 }
 
 

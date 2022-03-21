@@ -2,6 +2,9 @@ package com.tencent.cloud.smh
 
 import android.net.Uri
 import com.tencent.cloud.smh.api.model.*
+import com.tencent.cloud.smh.transfer.DownloadRequest
+import com.tencent.cloud.smh.transfer.DownloadResult
+import com.tencent.qcloud.core.logger.QCloudLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.future
 import java.math.BigDecimal
@@ -259,7 +262,10 @@ class SMHCollectionFuture internal constructor(
      * @return 下载信息
      */
     fun initDownload(name: String): CompletableFuture<InitDownload> = call {
-        smh.initDownload(name)
+        QCloudLogger.i("Test", "initDownload")
+        val result = smh.initDownload(name)
+        QCloudLogger.i("Test", "after initDownload")
+        result
     }
 
     /**
@@ -272,6 +278,14 @@ class SMHCollectionFuture internal constructor(
     @JvmOverloads
     fun download(url: String, contentUri: Uri, offset: Long = 0L) = call {
         smh.download(url, contentUri, offset)
+    }
+
+    @JvmOverloads
+    fun download(request: DownloadRequest)= call {
+        QCloudLogger.i("Test", "download")
+        val result = smh.download(request, null)
+        QCloudLogger.i("Test", "after download")
+        result
     }
 
     /**

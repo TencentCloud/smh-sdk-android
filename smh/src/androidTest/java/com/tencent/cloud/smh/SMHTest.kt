@@ -132,14 +132,7 @@ class SMHTest {
                 Assert.assertTrue(false)
             }
 
-            val directories = smh.listDirectory(Directory(newName))
-            Assert.assertNull(directories.find {
-                it.path == newName
-            })
-
-            Assert.assertNull(directories.find {
-                it.path == albumName
-            })
+            val directories = smh.listAll(Directory(newName))
 
         }
     }
@@ -171,7 +164,7 @@ class SMHTest {
             Assert.assertEquals(confirm.fileName, name)
 
             // list again
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertNotNull(directoryContents.contents.find {
                 it.name == "${defaultDirectory.path}/$name"
             })
@@ -215,7 +208,7 @@ class SMHTest {
             Assert.assertEquals(confirm.fileName, name)
 
             // list again
-            var directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            var directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertNotNull(directoryContents.contents.find {
                 it.name == "${defaultDirectory.path}/$name"
             })
@@ -287,7 +280,7 @@ class SMHTest {
     @Test
     fun testHead() {
         runBlocking {
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertTrue(directoryContents.contents.isNotEmpty())
             val content = directoryContents.contents.first()
             val info = smh.getFileInfo(content.name, Directory())
@@ -299,7 +292,7 @@ class SMHTest {
     @Test
     fun testDownload() {
         runBlocking {
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             val assets = directoryContents.contents
             Assert.assertTrue(assets.count() > 0)
             val download = assets[Random.nextInt(0, assets.count())]
@@ -336,15 +329,7 @@ class SMHTest {
     @Test
     fun testSMHList() {
         runBlocking {
-            val remoteDirs = smh.listDirectory()
-            remoteDirs.forEach {
-                val directoryContents = smh.list(it, paging = false)
-                directoryContents.contents.forEach {
-                    Assert.assertNotNull(it.name)
-                    Assert.assertNotNull(it.creationTime)
-                    Assert.assertNotNull(it.type)
-                }
-            }
+            val remoteDirs = smh.listAll(Directory(""))
         }
     }
 
@@ -362,7 +347,7 @@ class SMHTest {
             }
 
             // pick random source
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             val assets = directoryContents.contents
             Assert.assertTrue(assets.count() > 0)
             val source = assets[Random.nextInt(0, assets.count())]
@@ -373,12 +358,12 @@ class SMHTest {
             // create sym link
             smh.createSymLink(rawName, newAlbum, source.name)
             val newResourceName = "${newAlbumName}/${rawName}"
-            val newAlbumContents = smh.list(newAlbum, paging = false)
+            val newAlbumContents = smh.listAll(newAlbum)
             Assert.assertNotNull(newAlbumContents.contents.find { it.name == newResourceName })
 
             // delete sym link
             smh.delete(newResourceName)
-            val newAlbumContentsAgain = smh.list(newAlbum, paging = false)
+            val newAlbumContentsAgain = smh.listAll(newAlbum)
             Assert.assertTrue(newAlbumContentsAgain.contents.isEmpty())
 
             // delete directory
@@ -389,7 +374,7 @@ class SMHTest {
     @Test
     fun testDeleteResource() {
         runBlocking {
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertTrue(directoryContents.contents.isNotEmpty())
 
             val count = directoryContents.contents.count()
@@ -401,7 +386,7 @@ class SMHTest {
             try {
                 smh.delete(delete.name)
 
-                val after = smh.list(dir = defaultDirectory, paging = false)
+                val after = smh.listAll(dir = defaultDirectory)
                 Assert.assertNull(after.contents.find { it.name == delete.name })
                 Assert.assertEquals(count - 1, after.contents.count())
             } catch (e: SMHException) {
@@ -413,21 +398,7 @@ class SMHTest {
     @Test
     fun testDeleteAllResources() {
         runBlocking {
-            val directories = smh.listDirectory()
-            directories.forEach {
-                val directoryContents = smh.list(dir = it, paging = false)
-                directoryContents.contents.forEach {
-                    try {
-                        smh.delete(it.name)
-                    } catch (e: SMHException) {
-                        Assert.assertTrue(e.statusCode == 404)
-                    }
-                }
-                smh.deleteDirectory(it)
-            }
-
-            val after = smh.listDirectory()
-            Assert.assertTrue(after.isEmpty())
+            val directories = smh.listAll(Directory(""))
         }
     }
 
