@@ -9,6 +9,8 @@ package com.tencent.cloud.smh.api.model
 data class HistoryMediaContent(
     val totalNum: Int,
     val contents: List<HistoryMedia>,
+    val eTag: String? = null,
+    val nextMarker: String? = null,
 )
 
 data class HistoryMedia(

@@ -22,7 +22,6 @@
 package com.tencent.cloud.smh.transfer
 
 import android.content.Context
-import android.telephony.mbms.DownloadRequest
 import android.util.Log
 import bolts.CancellationTokenSource
 import com.tencent.cloud.smh.*
@@ -34,15 +33,22 @@ import com.tencent.cos.xml.ktx.cosService
 import com.tencent.cos.xml.model.`object`.UploadRequest
 import com.tencent.cos.xml.transfer.COSTransferTask
 import com.tencent.qcloud.core.logger.QCloudLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import java.math.BigInteger
 import java.util.*
+import java.util.concurrent.Executor
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.CoroutineContext
 
 /**
  * 传输任务
  */
-abstract class SMHTransferTask(val context: Context, val smhCollection: SMHCollection, transferRequest: SMHTransferRequest) {
+abstract class SMHTransferTask(val context: Context,
+                               val smhCollection: SMHCollection,
+                               transferRequest: SMHTransferRequest) {
 
     protected var transferApiProxy: TransferApiProxy
     protected var smhProgressListener: SMHProgressListener? = null
@@ -69,6 +75,9 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
     @Volatile
     protected lateinit var cts: CancellationTokenSource
 
+    // 自定义线程池
+    protected var mExecutor: Executor? = null
+
     val transferApi: TransferApiProxy = TransferApiProxy(
         cosService(context = context) {
             configuration {
@@ -78,9 +87,9 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
         }, smhCollection)
 
     private val TAG: String
-    var smhException: SMHException? = null
+    var mServerException: SMHException? = null
         protected set
-    var clientException: SMHClientException? = null
+    var mClientException: SMHClientException? = null
         protected set
     protected var smhKey: String
 
@@ -103,11 +112,15 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
         smhResultListener = transferRequest.resultListener
         isManualPaused = false
         isManualCanceled = false
-        smhException = null
-        clientException = null
+        mServerException = null
+        mClientException = null
         onTransferWaiting()
         cts = CancellationTokenSource()
         handle()
+    }
+
+    fun setExecutor(executor: Executor) {
+        mExecutor = executor
     }
 
     protected abstract fun tag(): String
@@ -155,12 +168,12 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
             onTransferSuccess(transferRequest, transferResult!!)
         } catch (exception: SMHClientException) {
             // 手动取消和暂停报错不在这里回调，否则可能会长时间阻塞
-            clientException = exception
+            mClientException = exception
         } catch (exception: SMHException) {
-            smhException = exception
+            mServerException = exception
         } catch (exception: CosXmlClientException) {
             QCloudLogger.e(tag(), "transfer with CosXmlClientException: code ${exception.errorCode}, message is ${exception.message}")
-            clientException = when(exception.errorCode) {
+            mClientException = when(exception.errorCode) {
                     200032, 200033, 200034, 200035, 200036, 20003, 20004 -> PoorNetworkException
                     10000 -> if (exception.message == "upload file does not exist") {
                         FileNotFoundException
@@ -174,20 +187,20 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
                 }
 
         } catch (exception: CosXmlServiceException) {
-            smhException = SMHException(
+            mServerException = SMHException(
                 errorCode = exception.errorCode,
                 errorMessage = exception.errorMessage,
                 statusCode = exception.statusCode,
                 message = exception.message?: "")
         } catch (exception: Exception) {
-            clientException = ClientInternalException(exception.message)
+            mClientException = ClientInternalException(exception.message)
 
         } finally {
 
             if (!isManualPaused && !isManualCanceled) {
-                if (clientException != null || smhException != null) {
-                    onTransferFailed(transferRequest, clientException, smhException)
-                    Log.e("QCloudHttp", "client ${clientException}, server ${smhException}")
+                if (mClientException != null || mServerException != null) {
+                    onTransferFailed(transferRequest, mClientException, mServerException)
+                    Log.e("QCloudHttp", "client ${mClientException}, server ${mServerException}")
                     // 上报传输失败
                     eventCode?.let {
                         FailureTransferTrackEvent(
@@ -197,7 +210,7 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
                             localUri = getLocalUri(transferRequest)?: "",
                             tookTime = System.currentTimeMillis() - startTime,
                             contentLength = mContentLength,
-                            exception = clientException?: smhException?: Exception("UnknownException")
+                            exception = mClientException?: mServerException?: Exception("UnknownException")
                         ).trackWithBeaconParams(context)
                     }
                 }
@@ -206,12 +219,26 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
     }
 
     fun checkIfSuccess() {
-        if (smhException != null) {
-            throw smhException!!
+        val serviceException = mServerException
+        val clientException = mClientException
+        if (serviceException != null) {
+            throw serviceException
         } else if (clientException != null) {
-            throw clientException!!
+            throw clientException
         }
     }
+
+
+    fun getResultOrThrow(): SMHTransferResult {
+        checkIfSuccess()
+        return transferResult?: throw SMHClientException("TransferResultNotFound")
+    }
+
+    @JvmOverloads
+    fun future(
+        context: CoroutineContext = Dispatchers.IO,
+        scope: CoroutineScope = GlobalScope,
+    ) = TransferTaskFuture(this, context, scope)
 
     /**
      * 检查传输参数，并计算额外参数
@@ -255,8 +282,8 @@ abstract class SMHTransferTask(val context: Context, val smhCollection: SMHColle
         transferRequest: SMHTransferRequest, clientException: SMHClientException?,
         smhException: SMHException?
     ) {
-        this.clientException = clientException
-        this.smhException = smhException
+        this.mClientException = clientException
+        this.mServerException = smhException
         taskState = SMHTransferState.FAILURE
         notifySMHTransferStateChange()
         notifySMHTransferResultFailed(transferRequest, clientException, smhException)

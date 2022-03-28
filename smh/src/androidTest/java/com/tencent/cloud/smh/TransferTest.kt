@@ -3,6 +3,7 @@ package com.tencent.cloud.smh
 import android.Manifest
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -13,6 +14,7 @@ import com.tencent.cloud.smh.api.dataOrNull
 import com.tencent.cloud.smh.api.model.Directory
 import com.tencent.cloud.smh.api.model.QuotaBody
 import com.tencent.cloud.smh.transfer.*
+import com.tencent.qcloud.core.logger.QCloudLogger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -71,7 +73,7 @@ class TransferTest {
             val file = File.createTempFile("read", ".txt")
             createFile(file, smhBigMediaSize)
             val uploadFileRequest = UploadFileRequest(
-                key = "123",
+                key = "123.jpg",
                 Uri.fromFile(file)
             )
             uploadFileRequest.progressListener = object: SMHProgressListener {
@@ -89,7 +91,7 @@ class TransferTest {
                     smhException: SMHException?,
                     smhClientException: SMHClientException?
                 ) {
-                    Log.i("Test", "onFailure")
+                    Log.i("Test", "onFailure $smhException and ")
                 }
             }
             uploadFileRequest.stateListener = object : SMHStateListener {
@@ -125,8 +127,8 @@ class TransferTest {
             val file = File.createTempFile("dowloadFile", ".txt")
             createFile(file, smhBigMediaSize)
             val downloadFileRequest = DownloadFileRequest(
-                key = "123",
-                localFullPath = file.absolutePath
+                key = "123.jpg",
+                // localFullPath = file.absolutePath
             )
             downloadFileRequest.progressListener = object: SMHProgressListener {
                 override fun onProgressChange(request: SMHRequest, progress: Long, target: Long) {
@@ -159,15 +161,86 @@ class TransferTest {
                 downloadFileRequest
             )
 
-            launch {
-                delay(5000)
-                downloadTask.pause()
+            downloadTask.start()
+            val result = downloadTask.getResultOrThrow()
+        }
+    }
+
+    @Test
+    fun testDownload() {
+
+        runBlocking {
+
+            val initDownload = smh.initDownload("123")
+            val downloadUrl = initDownload.url?: throw SMHClientException("DownloadUrlIsNull")
+            val downloadResult = smh.download(
+                DownloadRequest(downloadUrl, null)
+            )
+
+            val inputStream = downloadResult.inputStream?: return@runBlocking
+
+            val buffer = ByteArray(8192)
+
+            // val filePath = "${context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)}/dowload"
+            var len: Int = -1
+            var count = 0
+            while (true) {
+                len = inputStream.read(buffer, 0, buffer.size)
+                QCloudLogger.i("Test", "read len $len")
+                if (len <= 0) {
+                    break
+                } else {
+                    count += len
+                }
+            }
+            inputStream.close()
+            QCloudLogger.i("Test", "read count is $count")
+        }
+    }
+
+    @Test
+    fun testInputStreamDownloadTask() {
+
+        runBlocking {
+
+            val file = File.createTempFile("dowloadFile", ".txt")
+            createFile(file, smhBigMediaSize)
+            val downloadFileRequest = DownloadFileRequest(
+                key = "123",
+            )
+            downloadFileRequest.setRange(100)
+            downloadFileRequest.progressListener = object: SMHProgressListener {
+                override fun onProgressChange(request: SMHRequest, progress: Long, target: Long) {
+                    Log.i("Test", "Progress change $progress/$target")
+                }
             }
 
-            downloadTask.start()
+            val downloadTask = SMHDownloadTask(
+                context,
+                smh,
+                downloadFileRequest
+            )
 
-            delay(2000)
-            downloadTask.resume()
+            downloadTask.start()
+            val result = downloadTask.getResultOrThrow() as DownloadFileResult
+            val inputStream = result.content?: return@runBlocking
+
+            val buffer = ByteArray(8192)
+
+           // val filePath = "${context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)}/dowload"
+            var len: Int = -1
+            var count = 0
+            while (true) {
+                len = inputStream.read(buffer, 0, buffer.size)
+                QCloudLogger.i("Test", "read len $len")
+                if (len <= 0) {
+                    break
+                } else {
+                    count += len
+                }
+            }
+            inputStream.close()
+            QCloudLogger.i("Test", "read count is $count")
         }
     }
 }

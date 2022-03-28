@@ -18,21 +18,18 @@
 
 package com.tencent.cloud.smh.api
 
-import android.util.Log
 import com.tencent.cloud.smh.BuildConfig
-import com.tencent.cloud.smh.api.SMHService.Companion.customHost
 import com.tencent.cloud.smh.api.adapter.CallResultAdapterFactory
 import com.tencent.cloud.smh.api.adapter.SMHResponse
 import com.tencent.cloud.smh.api.model.*
 import com.tencent.cloud.smh.interceptor.RetryInterceptor
-import com.tencent.qcloud.core.logger.QCloudLogger
-import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
+import java.time.Duration
+import java.util.concurrent.TimeUnit
 
 
 /**
@@ -51,19 +48,20 @@ interface SMHService {
         const val defaultHost = "api.tencentsmh.cn"
         const val customHost: String = BuildConfig.CUSTOM_HOST
 
-
         init {
 
             val logging = HttpLoggingInterceptor()
-            logging.level = HttpLoggingInterceptor.Level.HEADERS
+            logging.level = HttpLoggingInterceptor.Level.BODY
 
             val httpClientBuilder = OkHttpClient.Builder()
                 // .addInterceptor(EnvSwitcherInterceptor())
                 .addInterceptor(RetryInterceptor())
                 .addInterceptor(logging)
                 .followRedirects(false)
+                .readTimeout(20, TimeUnit.SECONDS)
 
-            httpClient = httpClientBuilder.build()
+            httpClient = httpClientBuilder
+                .build()
 
             retrofit = Retrofit.Builder()
                 .baseUrl(baseUrl())
@@ -76,7 +74,7 @@ interface SMHService {
             shared = retrofit.create(SMHService::class.java)
         }
 
-        fun host() = if (customHost.isNotEmpty()) {
+        public fun host() = if (customHost.isNotEmpty()) {
             customHost
         } else {
             defaultHost
@@ -126,7 +124,7 @@ interface SMHService {
         @Query("move_authority") moveAuthority: Boolean = false,
         @Query("conflict_resolution_strategy") conflictStrategy: ConflictStrategy? = null,
         @Body from: RenameDirectoryBody
-    ): SMHResponse<Unit>
+    ): SMHResponse<RenameFileResponse?>
 
     @PUT("api/v1/file/{libraryId}/{spaceId}/{filePath}")
     suspend fun renameFile(
@@ -149,8 +147,13 @@ interface SMHService {
         @Query("user_id") userId: String? = null,
     ): SMHResponse<Unit>
 
+    /**
+     * 通过 page + page_size 的方式来查询分页
+     *
+     * 支持排序
+     */
     @GET("api/v1/directory/{libraryId}/{spaceId}/{dirPath}")
-    suspend fun listDirectory(
+    suspend fun listDirectoryByPageSize(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
         @Path("dirPath") dirPath: String = "",
@@ -163,13 +166,41 @@ interface SMHService {
         @Query("user_id") userId: String? = null,
     ): SMHResponse<DirectoryContents>
 
+    /**
+     * 通过 offset + limit 的方式来查询目录
+     *
+     * 支持排序
+     */
     @GET("api/v1/directory/{libraryId}/{spaceId}/{dirPath}")
-    suspend fun listDirectory(
+    suspend fun listDirectoryByOffsetLimit(
         @Path("libraryId") libraryId: String,
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
         @Path("dirPath") dirPath: String = "",
-        @Query("marker") marker: Long? = null,
+        @Query("offset") offset: Long,
+        @Query("limit") limit: Int,
+        @Query("orderBy") orderBy: OrderType? = null,
+        @Query("orderByType") orderByType: OrderDirection? = null,
+        @Query("filter") directoryFilter: DirectoryFilter? = null,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<DirectoryContents>
+
+    /**
+     * 通过 marker + limit 的方式来查询目录
+     *
+     * 不支持排序
+     */
+    @GET("api/v1/directory/{libraryId}/{spaceId}/{dirPath}")
+    suspend fun listDirectoryByMarkerLimit(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Path("dirPath") dirPath: String = "",
+        @Header("If-None-Match") eTag: String? = null,
+        @Query("marker") marker: String? = null,
         @Query("limit") limit: Int? = null,
+        @Query("orderBy") orderBy: OrderType? = null,
+        @Query("orderByType") orderByType: OrderDirection? = null,
+        @Query("filter") directoryFilter: DirectoryFilter? = null,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
     ): SMHResponse<DirectoryContents>
@@ -209,6 +240,17 @@ interface SMHService {
         @Query("access_token") accessToken: String,
     ): SMHResponse<AuthorizedContent>
 
+    @GET("api/v1/authority/{libraryId}/authorized-directory")
+    suspend fun getMyAuthorizedDirectoryWithMarker(
+        @Path("libraryId") libraryId: String,
+        @Header("If-None-Match") eTag: String? = null,
+        @Query("marker") marker: String? = null,
+        @Query("limit") limit: Int? = null,
+        @Query("orderBy") orderBy: OrderType? = null,
+        @Query("orderByType") orderByType: OrderDirection? = null,
+        @Query("access_token") accessToken: String,
+    ): SMHResponse<AuthorizedContent>
+
     @POST("api/v1/search/{libraryId}/{spaceId}/space-contents")
     suspend fun initSearch(
         @Path("libraryId") libraryId: String,
@@ -243,6 +285,19 @@ interface SMHService {
         @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
         @Query("page") page: Int,
         @Query("page_size") pageSize: Int,
+        @Query("orderBy") orderBy: OrderType? = null,
+        @Query("orderByType") orderByType: OrderDirection? = null,
+        @Query("access_token") accessToken: String,
+        @Query("user_id") userId: String? = null,
+    ): SMHResponse<RecycledContents>
+
+    @GET("api/v1/recycled/{libraryId}/{spaceId}")
+    suspend fun listRecycledWithMarker(
+        @Path("libraryId") libraryId: String,
+        @Path("spaceId") spaceId: String = DEFAULT_SPACE_ID,
+        @Header("If-None-Match") eTag: String? = null,
+        @Query("marker") marker: String? = null,
+        @Query("limit") limit: Int? = null,
         @Query("orderBy") orderBy: OrderType? = null,
         @Query("orderByType") orderByType: OrderDirection? = null,
         @Query("access_token") accessToken: String,
@@ -366,7 +421,7 @@ interface SMHService {
         @Query("permanent") permanent: Boolean?,
         @Query("access_token") accessToken: String,
         @Query("user_id") userId: String? = null,
-    ): SMHResponse<DeleteMediaResult>
+    ): SMHResponse<DeleteMediaResult?>
 
     @DELETE("api/v1/recycled/{libraryId}/{spaceId}/{itemId}")
     suspend fun deleteRecycledItem(

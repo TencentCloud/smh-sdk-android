@@ -2,6 +2,11 @@ package com.tencent.cloud.smh.transfer
 
 import android.net.Uri
 import com.tencent.cloud.smh.api.model.*
+import com.tencent.cos.xml.common.Constants
+import com.tencent.cos.xml.common.Range
+import com.tencent.qcloud.core.common.QCloudProgressListener
+import com.tencent.qcloud.core.http.*
+import java.io.InputStream
 
 /**
  * <p>
@@ -9,25 +14,58 @@ import com.tencent.cloud.smh.api.model.*
  * Copyright 2010-2021 Tencent Cloud. All Rights Reserved.
  */
 open class SMHRequest(
-    val meta: Map<String, String> = mapOf()
+    internal var httpMethod: String = "GET",
+    internal var httpHost: String = "",
+    internal var httpPath: String = "",
+    internal var httpQueries: Map<String, String> = mapOf(),
+    internal var httpUrl: String? = null,
+    internal val httpHeaders: MutableMap<String, String> = mutableMapOf(),
+    internal var httpTask: HttpTask<*>? = null,
 ) {
-
     var resultListener: SMHResultListener? = null
 }
 
+class DownloadRequest(
+    val url: String,
+    val progressListener: SMHProgressListener? = null,
+): SMHRequest(
+    httpMethod = "GET",
+    httpUrl = url,
+) {
+
+}
+
+class DownloadResult(
+
+    var inputStream: InputStream? = null,
+): SMHResult() {
+
+    override fun parseResponseBody(response: HttpResponse<*>) {
+        super.parseResponseBody(response)
+    }
+}
+
+
 open class SMHResult(
-    val headers: Map<String, String> = mapOf()
-)
+    var headers: Map<String, String> = mapOf()
+) {
+
+    open fun parseResponseBody(response: HttpResponse<*>) {
+        headers = response.headers().mapValues {
+            it.value.joinToString(";")
+        }
+    }
+}
 
 open class SMHTransferRequest(
     val key: String,
-): SMHRequest() {
+): SMHRequest(
+
+) {
 
     var stateListener: SMHStateListener? = null
 
     var progressListener: SMHProgressListener? = null
-
-
 }
 
 open class SMHTransferResult(
@@ -108,10 +146,26 @@ class UploadFileResult(
 class DownloadFileRequest(
     key: String,
     val historyId: Long? = null,
-    val localFullPath: String
-): SMHTransferRequest(key)
+    val localFullPath: String? = null,
+): SMHTransferRequest(key) {
+
+    /**
+     * 设置下载范围
+     */
+    fun setRange(start: Long, end: Long? = null) {
+        val range = if (end == null) {
+            Range(start)
+        } else {
+            Range(start, end)
+        }
+        httpHeaders[HttpConstants.Header.RANGE] = range.range
+    }
+
+}
+
 
 class DownloadFileResult(
+    val content: InputStream?,
     key: String,
     crc64: String?
 ): SMHTransferResult(key, crc64)

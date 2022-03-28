@@ -29,12 +29,15 @@ import com.tencent.cloud.smh.api.data
 import com.tencent.cloud.smh.api.dataOrNull
 import com.tencent.cloud.smh.api.model.*
 import com.tencent.cloud.smh.ext.cosPathEncode
+import com.tencent.cloud.smh.ext.runWithSuspend
 import com.tencent.cloud.smh.track.SMHBeaconKey
 import com.tencent.cloud.smh.track.SMHFailureRequestTrackEvent
 import com.tencent.cloud.smh.track.SMHSuccessRequestTrackEvent
-import com.tencent.cloud.smh.transfer.COSFileTransfer
-import com.tencent.cloud.smh.transfer.CancelHandler
+import com.tencent.cloud.smh.transfer.*
 import com.tencent.cos.xml.listener.CosXmlProgressListener
+import com.tencent.qcloud.core.http.QCloudHttpClient
+import com.tencent.qcloud.core.http.QCloudHttpRequest
+import com.tencent.qcloud.core.task.TaskExecutors
 import com.tencent.qcloud.core.track.TrackService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,10 +45,11 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.math.BigDecimal
+import java.net.URL
 import java.util.*
+import java.util.concurrent.Executor
 import kotlin.collections.ArrayList
 import kotlin.coroutines.CoroutineContext
-import kotlin.math.max
 
 /**
  * <p>
@@ -61,6 +65,8 @@ class SMHCollection @JvmOverloads constructor(
     internal val user: SMHUser,
     private val transfer: COSFileTransfer = COSFileTransfer(context),
 ) {
+
+    private val httpClient = QCloudHttpClient.getDefault()
 
     internal val rootDirectory = Directory()
 
@@ -133,6 +139,7 @@ class SMHCollection @JvmOverloads constructor(
     /**
      * 列出所有的文件列表
      */
+    @JvmOverloads
     suspend fun listAll(
 
         dir: Directory,
@@ -176,20 +183,21 @@ class SMHCollection @JvmOverloads constructor(
     /**
      * 通过 marker + limit 的方式列出所有的文件列表
      */
+    @JvmOverloads
     suspend fun listAllWithMarker(
 
         dir: Directory,
         limit: Int = 100,
     ): DirectoryContents {
 
-        var nextMarker: Long? = null
+        var nextMarker: String? = null
         val contents = ArrayList<MediaContent>()
 
         while (true) {
 
             val directoryContents = listWithMarker(
                 dir = dir,
-                nextMarker = nextMarker,
+                marker = nextMarker,
                 limit = limit,
             )
             contents.addAll(directoryContents.contents)
@@ -233,8 +241,8 @@ class SMHCollection @JvmOverloads constructor(
     ): DirectoryContents {
 
 
-        return runWithBeaconReport("ListDirectory", dir.path) { accessToken ->
-            SMHService.shared.listDirectory(
+        return runWithBeaconReport(RequestNameListDirectoryWithPage, dir.path) { accessToken ->
+            SMHService.shared.listDirectoryByPageSize(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dir.path ?: "",
@@ -248,6 +256,7 @@ class SMHCollection @JvmOverloads constructor(
             ).data
         }
     }
+
 
     /**
      * 通过 marker + limit 的方式列出文件列表
@@ -266,22 +275,69 @@ class SMHCollection @JvmOverloads constructor(
     @JvmOverloads
     suspend fun listWithMarker(
         dir: Directory,
-        nextMarker: Long? = null,
+        marker: String? = null,
         limit: Int? = null,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+        directoryFilter: DirectoryFilter? = null,
+        eTag: String? = null,
     ): DirectoryContents {
 
-        return runWithBeaconReport("ListDirectoryWithMarker", dir.path) { accessToken ->
-            SMHService.shared.listDirectory(
+        return runWithBeaconReport(RequestNameListDirectoryWithMarker, dir.path) { accessToken ->
+            SMHService.shared.listDirectoryByMarkerLimit(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dir.path ?: "",
                 accessToken = accessToken,
                 userId = userSpace.userId,
-                marker = nextMarker,
+                marker = marker,
                 limit = limit,
+                orderBy = orderType,
+                orderByType = orderDirection,
+                directoryFilter = directoryFilter,
+                eTag = eTag
             ).data
         }
     }
+
+    /**
+     * 通过 offset + limit 的方式来列出文件列表
+     *
+     * @param dir 文件夹
+     * @param offset 文件偏移量
+     * @param limit 列出的数量
+     * @param orderType 排序方式
+     * @param orderDirection 排序方向
+     * @param directoryFilter 过滤类型
+     *
+     * @return 文件列表
+     */
+    @JvmOverloads
+    suspend fun listWithOffset(
+        dir: Directory,
+        offset: Long,
+        limit: Int,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+        directoryFilter: DirectoryFilter? = null,
+    ): DirectoryContents {
+
+        return runWithBeaconReport("ListDirectoryWithOffset", dir.path) { accessToken ->
+            SMHService.shared.listDirectoryByOffsetLimit(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                dirPath = dir.path ?: "",
+                accessToken = accessToken,
+                userId = userSpace.userId,
+                offset = offset,
+                limit = limit,
+                orderBy = orderType,
+                orderByType = orderDirection,
+                directoryFilter = directoryFilter,
+            ).data
+        }
+    }
+
 
     /**
      * 获取角色列表，不同的角色对应不同的权限
@@ -302,6 +358,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param historyId 历史版本号
      * @param encode 文件路径是否已经 url 编码
      */
+    @JvmOverloads
     suspend fun getDownloadAccessUrl(path: String, historyId: Long? = null, encode: Boolean = false): String {
         val encodePath = if (encode) {
             path
@@ -321,6 +378,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param filePath 文件路径
      * @param historyId 历史版本号
      */
+    @JvmOverloads
     suspend fun getPreviewAccessUrl(filePath: String, historyId: Long? = null,): String {
         return retryWhenTokenExpired() { accessToken ->
             "${baseUrl()}api/v1/file/${libraryId}/${userSpace.spaceId}/${filePath.cosPathEncode()}?preview"
@@ -345,7 +403,7 @@ class SMHCollection @JvmOverloads constructor(
                                       size: Int? = null, scale: Int? = null,
                                       widthSize: Int? = null, heightSize: Int? = null): String {
 
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         return retryWhenTokenExpired() { accessToken ->
             "${baseUrl()}api/v1/file/${libraryId}/${userSpace.spaceId}/${filePath.cosPathEncode()}?preview"
                 .query("history_id", historyId)
@@ -362,6 +420,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param orderType 排序方式
      * @param orderDirection 排序方向
      */
+    @JvmOverloads
     suspend fun getMyAuthorizedDirectory(page: Int, pageSize: Int, orderType: OrderType? = null,
                                          orderDirection: OrderDirection? = null): AuthorizedContent {
         return runWithBeaconReport("ListAuthorizedDirectory", null) { accessToken ->
@@ -376,6 +435,23 @@ class SMHCollection @JvmOverloads constructor(
         }
     }
 
+    @JvmOverloads
+    suspend fun getMyAuthorizedDirectoryWithMarker(
+        marker: String?, limit: Int, orderType: OrderType?, orderDirection: OrderDirection?, eTag: String?
+    ): AuthorizedContent {
+        return runWithBeaconReport("ListAuthorizedDirectory", null) { accessToken ->
+            SMHService.shared.getMyAuthorizedDirectoryWithMarker(
+                libraryId = libraryId,
+                marker = marker,
+                limit = limit,
+                orderBy = orderType,
+                orderByType = orderDirection,
+                eTag = eTag,
+                accessToken = accessToken,
+            ).data
+        }
+    }
+
     /**
      * 初始化搜索，可能会返回一定量的搜索结果
      *
@@ -383,6 +459,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param scope 搜索范围
      * @param searchTypes 搜索的文件类型
      */
+    @JvmOverloads
     suspend fun initSearch(keyword: String?, scope: String? = null, searchTypes: List<SearchType>): SearchPartContent {
 
         return runWithBeaconReport("InitSearch", keyword) { accessToken ->
@@ -470,6 +547,35 @@ class SMHCollection @JvmOverloads constructor(
         }
     }
 
+    @JvmOverloads
+    suspend fun listRecycledWithMarker(
+        marker: String?,
+        limit: Int? = null,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+        eTag: String? = null
+    ): RecycledContents  {
+        return runWithBeaconReport("ListRecycledWithMarker", null) { accessToken ->
+            val contents = ArrayList<RecycledItem>()
+
+            val recycledContents = SMHService.shared.listRecycledWithMarker(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                userId = userSpace.userId,
+                marker = marker,
+                limit = limit,
+                eTag = eTag,
+                orderBy = orderType,
+                orderByType = orderDirection
+            ).data
+            val totalNum = recycledContents.totalNum
+            contents.addAll(recycledContents.contents)
+            RecycledContents(totalNum = totalNum, contents = contents)
+        }
+    }
+
+
     /**
      * 创建文件夹
      *
@@ -497,7 +603,8 @@ class SMHCollection @JvmOverloads constructor(
      * @param conflictStrategy 冲突处理方式
      * @return 执行结果，true 表示重命名成功，false 表示重命名失败
      */
-    suspend fun renameDirectory(target: Directory, source: Directory, conflictStrategy: ConflictStrategy? = null): Boolean {
+    @JvmOverloads
+    suspend fun renameDirectory(target: Directory, source: Directory, conflictStrategy: ConflictStrategy? = null): RenameFileResponse? {
         val targetPath = checkNotNull(target.path)
         val sourcePath = checkNotNull(source.path)
         return runWithBeaconReport("RenameDirectory", sourcePath) { accessToken ->
@@ -510,7 +617,7 @@ class SMHCollection @JvmOverloads constructor(
                 conflictStrategy = conflictStrategy,
                 moveAuthority = true,
                 from = RenameDirectoryBody(sourcePath)
-            ).checkSuccess()
+            ).checkSuccess
         }
     }
 
@@ -525,6 +632,7 @@ class SMHCollection @JvmOverloads constructor(
      *
      * @return 重命名结果
      */
+    @JvmOverloads
     suspend fun renameFile(targetName: String, targetDir: Directory = rootDirectory,
                            sourceName: String, sourceDir: Directory = rootDirectory,
                            conflictStrategy: ConflictStrategy? = null): RenameFileResponse {
@@ -553,7 +661,7 @@ class SMHCollection @JvmOverloads constructor(
         name: String,
         dir: Directory = rootDirectory
     ): HeadFileContent {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("HeadFile", filePath) { accessToken ->
             val headFileResponse = SMHService.shared.headFile(
                 libraryId = libraryId,
@@ -599,7 +707,7 @@ class SMHCollection @JvmOverloads constructor(
         dir: Directory = rootDirectory,
         historyId: Long? = null
     ): FileInfo {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("GetFileInfo", filePath) { accessToken ->
             SMHService.shared.getFileInfo(
                 libraryId = libraryId,
@@ -643,7 +751,7 @@ class SMHCollection @JvmOverloads constructor(
                                     dir: Directory = rootDirectory,
                                     size: Int? = null
     ): ThumbnailResult {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("GetThumbnail", filePath) { accessToken ->
             val thumbnailResult = SMHService.shared.getThumbnail(
                 libraryId = libraryId,
@@ -674,7 +782,7 @@ class SMHCollection @JvmOverloads constructor(
         dir: Directory = rootDirectory,
         conflictStrategy: ConflictStrategy? = null
     ): InitUpload {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("InitUpload", filePath) { accessToken ->
             val metaData = meta?.mapKeys { "x-smh-meta-${it.key}" }
             SMHService.shared.initUpload(
@@ -705,7 +813,7 @@ class SMHCollection @JvmOverloads constructor(
         conflictStrategy: ConflictStrategy? = null,
         overrideOnNameConflict: Boolean? = true
     ): InitUpload {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         val compatConflictStrategy = if (overrideOnNameConflict == true) {
             ConflictStrategy.OVERWRITE
         } else {
@@ -751,6 +859,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param size 本地文件大小
      * @return 上传成功返回的 eTag
      */
+    @JvmOverloads
     suspend fun multipartUpload(metadata: MultiUploadMetadata, uri: Uri, size: Long, cancelHandler: CancelHandler? = null, cosXmlProgressListener: CosXmlProgressListener? = null): String? {
         return transfer.multipartUpload(metadata, uri, size, cancelHandler, cosXmlProgressListener)
     }
@@ -763,6 +872,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param uri 本地文件 URI
      * @return 上传成功返回的 eTag
      */
+    @JvmOverloads
     suspend fun upload(uploader: InitUpload, uri: Uri, progressListener: CosXmlProgressListener? = null): String? {
         return transfer.upload(uploader, uri, progressListener)
     }
@@ -790,6 +900,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param confirmKey 上传任务的 confirmKey
      * @return 上传结果
      */
+    @JvmOverloads
     suspend fun confirmUpload(confirmKey: String, crc64: String? = null): ConfirmUpload {
         return runWithBeaconReport("ConfirmUpload", confirmKey) { accessToken ->
             SMHService.shared.confirmUpload(
@@ -809,11 +920,12 @@ class SMHCollection @JvmOverloads constructor(
      * @param dir 文件所在文件夹，默认为根目录
      * @return 下载信息
      */
+    @JvmOverloads
     suspend fun initDownload(
         name: String,
         dir: Directory = rootDirectory,
     ): InitDownload {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         val resp = runWithBeaconReport("InitDownload", filePath) { accessToken ->
              SMHService.shared.initDownload(
                 libraryId = libraryId,
@@ -885,22 +997,21 @@ class SMHCollection @JvmOverloads constructor(
         }
     }
 
-
-
     /**
      * 删除文件
      *
      * @param name 文件名，如果没有设置文件夹，则为文件路径
      * @param dir 文件所在文件夹，默认为根目录
      * @param permanent 是否永久删除，为 true 表示不放到回收站中
-     * @return 执行结果
+     * @return 执行结果 如果未开通回收站，或者 permanent 为true 表示
      */
+    @JvmOverloads
     suspend fun delete(
         name: String,
         dir: Directory = rootDirectory,
         permanent: Boolean = false,
-    ): DeleteMediaResult {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+    ): DeleteMediaResult? {
+        val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("DeleteFile", filePath) { accessToken ->
             SMHService.shared.deleteFile(
                 libraryId = libraryId,
@@ -908,7 +1019,7 @@ class SMHCollection @JvmOverloads constructor(
                 permanent = permanent,
                 filePath = filePath,
                 accessToken = accessToken
-            ).data
+            ).checkSuccess
         }
     }
 
@@ -1013,7 +1124,7 @@ class SMHCollection @JvmOverloads constructor(
         sourceFileName: String,
         overrideOnNameConflict: Boolean = false
     ): ConfirmUpload {
-        val filePath = dir.path?.let { "$it/$name" } ?: name
+        val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("CreateSynLink", filePath) { accessToken ->
             SMHService.shared.createSymLink(
                 libraryId = libraryId,
@@ -1268,12 +1379,65 @@ class SMHCollection @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 指定 URL 下载
+     */
+    @JvmOverloads
+    suspend fun download(request: DownloadRequest, executor: Executor? = null): DownloadResult {
+        return execute(request, DownloadResult(), executor?: TaskExecutors.DOWNLOAD_EXECUTOR)
+    }
 
-    companion object {
-        public fun smhKey(directory: String?, name: String): String {
-            return if (TextUtils.isEmpty(directory)) name else "$directory/$name"
+    @Throws
+    fun <T1: SMHRequest, T2: SMHResult> buildHttpRequest(request: T1, result: T2): QCloudHttpRequest<T2> {
+
+        val url = request.httpUrl
+        val httpRequestBuilder = QCloudHttpRequest.Builder<T2>()
+            .method(request.httpMethod)
+
+        if (url != null) {
+            httpRequestBuilder.url(URL(url))
+        } else {
+            httpRequestBuilder.host(request.httpHost)
+            httpRequestBuilder.path(request.httpPath)
+            httpRequestBuilder.query(request.httpQueries)
+        }
+        httpRequestBuilder.addHeaders(request.httpHeaders.mapValues {
+            listOf(it.value)
+        })
+
+        // 增加 body 解析
+        if (request is DownloadRequest && result is DownloadResult) {
+            httpRequestBuilder.converter(DownloadResponseConverter { complete, target ->
+                request.progressListener?.onProgressChange(request, complete, target)
+            })
+        }
+
+        return httpRequestBuilder.build()
+    }
+
+
+    /**
+     * 执行 SMHRequest 请求
+     */
+    @Throws
+    suspend fun <T1: SMHRequest, T2: SMHResult> execute(request: T1, result: T2, executor: Executor): T2 {
+
+        return executor.runWithSuspend {
+
+            val httpRequest = buildHttpRequest(request, result)
+
+            val httpTask = httpClient.resolveRequest(httpRequest)
+            request.httpTask = httpTask
+            val httpResult = httpTask.executeNow()
+
+            httpResult.content()
         }
     }
+
+    fun cancel(request: SMHRequest) {
+        request.httpTask?.cancel()
+    }
+
 
     private fun String.query(key: String, value: Any?): String {
         return this.concatIf("&$key=$value", value != null)
@@ -1284,6 +1448,16 @@ class SMHCollection @JvmOverloads constructor(
             "${this}$s"
         } else {
             this
+        }
+    }
+
+    private fun smhKey(dir: String?, name: String): String {
+        return if (dir.isNullOrEmpty()) {
+            name
+        } else if (dir.endsWith("/")) {
+            "$dir$name"
+        } else {
+            "$dir/$name"
         }
     }
 
@@ -1342,6 +1516,9 @@ fun SMHException.isTokenExpiredException(): Boolean {
     ))
 }
 
+ public fun smhKey(directory: String?, name: String): String {
+     return if (TextUtils.isEmpty(directory)) name else "$directory/$name"
+ }
 
 
 

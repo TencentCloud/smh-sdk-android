@@ -33,6 +33,7 @@ import com.tencent.cos.xml.listener.CosXmlResultListener
 import com.tencent.cos.xml.model.CosXmlRequest
 import com.tencent.cos.xml.model.CosXmlResult
 import com.tencent.cos.xml.model.`object`.*
+import com.tencent.qcloud.core.http.HttpRequest
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong

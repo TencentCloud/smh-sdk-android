@@ -88,9 +88,9 @@ object MSHelper {
                 put(MediaStore.MediaColumns.DATE_ADDED, creationDate.time / 1000)
                 put(MediaStore.MediaColumns.DATE_MODIFIED, creationDate.time / 1000)
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
+            //if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            //    put(MediaStore.MediaColumns.IS_PENDING, 1)
+            //}
         }
 
         // Keeps a handle to the new media's URI in case we need to modify it
@@ -100,16 +100,16 @@ object MSHelper {
 
     @JvmStatic
     fun endAssetPending(context: Context, contentUri: Uri) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            return
-        }
+        //if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        //    return
+        //}
 
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.IS_PENDING, 0)
-        }
-
-        resolver.update(contentUri, values, null, null)
+//        val resolver = context.contentResolver
+//        val values = ContentValues().apply {
+//            put(MediaStore.MediaColumns.IS_PENDING, 0)
+//        }
+//
+//        resolver.update(contentUri, values, null, null)
     }
 
 

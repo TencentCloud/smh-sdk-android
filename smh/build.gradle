@@ -29,8 +29,8 @@ dokkaHtml.configure {
     }
 }
 
-def smhVersionName = "1.1.1"
-def smhVersionCode = 10101
+def smhVersionName = "1.1.3"
+def smhVersionCode = 10103
 
 android {
     compileSdkVersion 29
@@ -97,7 +97,7 @@ dependencies {
 //    compile project(':cos-android-ktx')
 //    compileOnly project(':xmlAnnoation')
 
-    api 'com.qcloud.cos:cos-android:5.8.0'
+    api 'com.qcloud.cos:cos-android:5.8.4'
     api ('com.qcloud.cos:cos-ktx:5.6.5'){
         exclude group: 'com.tencent.qcloud', module: 'beacon-android-release'
         exclude group: 'com.qcloud.cos', module: 'cos-android'
@@ -106,6 +106,10 @@ dependencies {
     implementation 'com.squareup.retrofit2:retrofit:2.6.4'
     implementation 'com.squareup.retrofit2:converter-gson:2.6.4'
     implementation 'com.squareup.okhttp3:logging-interceptor:3.10.0'
+
+
+    // compileOnly 'com.tencent.beacon:beacon-android-release:4.2.57.1'
+
 
     // testImplementation for pure JVM unit tests
     testImplementation 'junit:junit:4.13'
@@ -198,4 +202,4 @@ static String quotWrapper(key) {
 // assemble 先生成 aar 包
 // publishMavenAarPublicationToMavenLocal 发布到本地
 // publishMavenAarPublicationToMavenRepository 发布到 mavenCentral
-// apply from: '../publish.gradle'
+apply from: '../publish.gradle'

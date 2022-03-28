@@ -2,6 +2,9 @@ package com.tencent.cloud.smh
 
 import android.net.Uri
 import com.tencent.cloud.smh.api.model.*
+import com.tencent.cloud.smh.transfer.DownloadRequest
+import com.tencent.cloud.smh.transfer.DownloadResult
+import com.tencent.qcloud.core.logger.QCloudLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.future
 import java.math.BigDecimal
@@ -82,7 +85,7 @@ class SMHCollectionFuture internal constructor(
      * @param source 源文件夹
      * @return 执行结果，true 表示重命名成功，false 表示重命名失败
      */
-    fun renameDirectory(target: Directory, source: Directory): CompletableFuture<Boolean> =
+    fun renameDirectory(target: Directory, source: Directory): CompletableFuture<RenameFileResponse?> =
         call { smh.renameDirectory(target, source) }
 
     /**
@@ -259,7 +262,10 @@ class SMHCollectionFuture internal constructor(
      * @return 下载信息
      */
     fun initDownload(name: String): CompletableFuture<InitDownload> = call {
-        smh.initDownload(name)
+        QCloudLogger.i("Test", "initDownload")
+        val result = smh.initDownload(name)
+        QCloudLogger.i("Test", "after initDownload")
+        result
     }
 
     /**
@@ -274,6 +280,14 @@ class SMHCollectionFuture internal constructor(
         smh.download(url, contentUri, offset)
     }
 
+    @JvmOverloads
+    fun download(request: DownloadRequest)= call {
+        QCloudLogger.i("Test", "download")
+        val result = smh.download(request, null)
+        QCloudLogger.i("Test", "after download")
+        result
+    }
+
     /**
      * 删除文件
      *
@@ -281,7 +295,7 @@ class SMHCollectionFuture internal constructor(
      * @param dir 文件所在文件夹，默认为根目录
      * @return 执行结果
      */
-    fun delete(name: String, permanent: Boolean): CompletableFuture<DeleteMediaResult> = call {
+    fun delete(name: String, permanent: Boolean): CompletableFuture<DeleteMediaResult?> = call {
         smh.delete(name = name, permanent = permanent)
     }
 

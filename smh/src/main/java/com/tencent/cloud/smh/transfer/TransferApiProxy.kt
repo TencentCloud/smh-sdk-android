@@ -4,14 +4,23 @@ import android.net.Uri
 import bolts.Task
 import com.tencent.cloud.smh.SMHCollection
 import com.tencent.cloud.smh.api.model.*
+import com.tencent.cloud.smh.ext.runWithSuspend
 import com.tencent.cos.xml.CosXmlSimpleService
 import com.tencent.cos.xml.ktx.suspendBlock
 import com.tencent.cos.xml.listener.CosXmlProgressListener
 import com.tencent.cos.xml.model.CosXmlRequest
 import com.tencent.cos.xml.model.`object`.*
+import com.tencent.qcloud.core.task.TaskExecutors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okio.Sink
 import retrofit2.http.Url
 import java.net.URL
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * <p>
@@ -103,11 +112,11 @@ class TransferApiProxy(
         return smhCollection.getFileInfo(smhKey, historyId = historyId)
     }
 
-    suspend fun download(url: String, offset: Long, localFullPath: String,
-                               requestReference: AtomicReference<CosXmlRequest>? = null,
-                               cosXmlProgressListener: CosXmlProgressListener? = null): GetObjectResult {
+    suspend fun download(url: String, offset: Long, localFullPath: String, requestReference: AtomicReference<CosXmlRequest>? = null,
+                         executor: Executor? = null,
+                         cosXmlProgressListener: CosXmlProgressListener? = null): GetObjectResult {
 
-        return suspendBlock<GetObjectResult> {
+        return (executor?: TaskExecutors.DOWNLOAD_EXECUTOR).runWithSuspend<GetObjectResult>() {
 
             val httpUrl = URL(url)
 
@@ -126,9 +135,8 @@ class TransferApiProxy(
             }
             request.progressListener = cosXmlProgressListener
             requestReference?.set(request)
-            cosService.getObjectAsync(request, it)
+            cosService.getObject(request)
         }
-
     }
 
     fun cancel(request: CosXmlRequest) {
@@ -142,4 +150,6 @@ class TransferApiProxy(
     suspend fun abortMultiUpload(confirmKey: String) {
 
     }
+
+
 }

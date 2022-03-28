@@ -4,22 +4,22 @@ import android.Manifest
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.tencent.cloud.smh.api.SMHService
-import com.tencent.cloud.smh.api.dataOrNull
+import com.tencent.cloud.smh.api.model.ConflictStrategy
 import com.tencent.cloud.smh.api.model.Directory
 import com.tencent.cloud.smh.api.model.QuotaBody
-import kotlinx.coroutines.delay
+import com.tencent.cloud.smh.transfer.*
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.lang.Exception
-import java.lang.Thread.sleep
+import java.io.File
 import kotlin.random.Random
 
 
@@ -71,6 +71,122 @@ class SMHTest {
         testSMHList()
         testDeleteAllResources()
     }
+
+    /**
+     * 删除文件
+     */
+    @Test
+    fun testDeleteFile() {
+
+        runBlocking {
+
+            // 1. 直接使用 key 删除文件
+            val key = "${System.currentTimeMillis()}"
+            uploadFile(key, 100)
+            val result1 = smh.delete(key)
+
+            // 未开通回收站时，result 为空
+            // checkNotNull(result)
+            // checkNotNull(result.recycledItemId)
+
+            // 2. 使用 dir + name 删除文件
+            val dir1 = ""
+            val name = "${System.currentTimeMillis()}"
+            uploadFile("$dir1/$name", 100)
+            val result2 = smh.delete(name = name, dir = Directory(dir1))
+
+            // 3. dir 以/ 结尾
+            uploadFile("$dir1/$name", 100)
+            val result3 = smh.delete(name = name, dir = Directory("$dir1/"))
+
+            // 4. 永久删除文件
+            uploadFile(key, 100)
+            val result4 = smh.delete(key, permanent = true)
+            check(result4 == null)
+
+            // 5. 删除一个不存在的文件
+            try {
+                val result5 = smh.delete(key, permanent = true)
+            } catch (e: Exception) {
+                Assert.assertTrue(e is SMHException && e.statusCode == 404)
+            }
+
+        }
+    }
+
+
+
+    /**
+     * 重命名文件
+     */
+    @Test
+    fun testRenameFile() {
+
+        runBlocking {
+
+            val targetName = "${System.currentTimeMillis()}"
+            uploadFile(targetName, 100)
+
+            // 1. 重命名文件-覆盖
+            val name = "${System.currentTimeMillis()}"
+            uploadFile(name, 100)
+            val result = smh.renameFile(targetName = targetName, sourceName = name, conflictStrategy = ConflictStrategy.OVERWRITE)
+
+            val name2 = "${System.currentTimeMillis()}"
+            uploadFile(name2, 100)
+            smh.renameFile(targetName = targetName, sourceName = name, conflictStrategy = ConflictStrategy.RENAME)
+        }
+    }
+
+
+    /**
+     * 重命名文件夹
+     */
+    @Test
+    fun testRenameDirectoryOverride() {
+
+        runBlocking {
+
+            val targetName = "${System.currentTimeMillis()}"
+            smh.createDirectory(Directory(targetName))
+
+            // 1. 重命名文件夹-覆盖
+            val name1 = "${System.currentTimeMillis()}"
+            smh.createDirectory(Directory(name1))
+            val result1 = smh.renameDirectory(
+                target = Directory(targetName),
+                source = Directory(name1),
+                conflictStrategy = ConflictStrategy.RENAME)
+            checkNotNull(result1)
+
+            val name2 = "${System.currentTimeMillis()}"
+            smh.createDirectory(Directory(name2))
+
+            try {
+                val result2 = smh.renameDirectory(
+                    target = Directory(targetName),
+                    source = Directory(name2),
+                    conflictStrategy = ConflictStrategy.ASK)
+                Assert.assertFalse(true)
+            } catch (e: Exception) {
+                check(e is SMHException && e.statusCode == 409)
+            }
+
+            try {
+
+                val result3 = smh.renameDirectory(
+                    target = Directory(targetName),
+                    source = Directory(name2 + "not-found"),
+                    conflictStrategy = ConflictStrategy.ASK)
+                Assert.assertFalse(true)
+            } catch (e: Exception) {
+                check(e is SMHException && e.statusCode == 404)
+            }
+        }
+
+    }
+
+
 
     @Test
     fun testUserSpace() {
@@ -132,14 +248,7 @@ class SMHTest {
                 Assert.assertTrue(false)
             }
 
-            val directories = smh.listDirectory(Directory(newName))
-            Assert.assertNull(directories.find {
-                it.path == newName
-            })
-
-            Assert.assertNull(directories.find {
-                it.path == albumName
-            })
+            val directories = smh.listAll(Directory(newName))
 
         }
     }
@@ -171,7 +280,7 @@ class SMHTest {
             Assert.assertEquals(confirm.fileName, name)
 
             // list again
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertNotNull(directoryContents.contents.find {
                 it.name == "${defaultDirectory.path}/$name"
             })
@@ -215,7 +324,7 @@ class SMHTest {
             Assert.assertEquals(confirm.fileName, name)
 
             // list again
-            var directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            var directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertNotNull(directoryContents.contents.find {
                 it.name == "${defaultDirectory.path}/$name"
             })
@@ -287,7 +396,7 @@ class SMHTest {
     @Test
     fun testHead() {
         runBlocking {
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertTrue(directoryContents.contents.isNotEmpty())
             val content = directoryContents.contents.first()
             val info = smh.getFileInfo(content.name, Directory())
@@ -299,7 +408,7 @@ class SMHTest {
     @Test
     fun testDownload() {
         runBlocking {
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             val assets = directoryContents.contents
             Assert.assertTrue(assets.count() > 0)
             val download = assets[Random.nextInt(0, assets.count())]
@@ -336,15 +445,7 @@ class SMHTest {
     @Test
     fun testSMHList() {
         runBlocking {
-            val remoteDirs = smh.listDirectory()
-            remoteDirs.forEach {
-                val directoryContents = smh.list(it, paging = false)
-                directoryContents.contents.forEach {
-                    Assert.assertNotNull(it.name)
-                    Assert.assertNotNull(it.creationTime)
-                    Assert.assertNotNull(it.type)
-                }
-            }
+            val remoteDirs = smh.listAll(Directory(""))
         }
     }
 
@@ -362,7 +463,7 @@ class SMHTest {
             }
 
             // pick random source
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             val assets = directoryContents.contents
             Assert.assertTrue(assets.count() > 0)
             val source = assets[Random.nextInt(0, assets.count())]
@@ -373,12 +474,12 @@ class SMHTest {
             // create sym link
             smh.createSymLink(rawName, newAlbum, source.name)
             val newResourceName = "${newAlbumName}/${rawName}"
-            val newAlbumContents = smh.list(newAlbum, paging = false)
+            val newAlbumContents = smh.listAll(newAlbum)
             Assert.assertNotNull(newAlbumContents.contents.find { it.name == newResourceName })
 
             // delete sym link
             smh.delete(newResourceName)
-            val newAlbumContentsAgain = smh.list(newAlbum, paging = false)
+            val newAlbumContentsAgain = smh.listAll(newAlbum)
             Assert.assertTrue(newAlbumContentsAgain.contents.isEmpty())
 
             // delete directory
@@ -389,7 +490,7 @@ class SMHTest {
     @Test
     fun testDeleteResource() {
         runBlocking {
-            val directoryContents = smh.list(dir = defaultDirectory, paging = false)
+            val directoryContents = smh.listAll(dir = defaultDirectory)
             Assert.assertTrue(directoryContents.contents.isNotEmpty())
 
             val count = directoryContents.contents.count()
@@ -401,7 +502,7 @@ class SMHTest {
             try {
                 smh.delete(delete.name)
 
-                val after = smh.list(dir = defaultDirectory, paging = false)
+                val after = smh.listAll(dir = defaultDirectory)
                 Assert.assertNull(after.contents.find { it.name == delete.name })
                 Assert.assertEquals(count - 1, after.contents.count())
             } catch (e: SMHException) {
@@ -413,28 +514,29 @@ class SMHTest {
     @Test
     fun testDeleteAllResources() {
         runBlocking {
-            val directories = smh.listDirectory()
-            directories.forEach {
-                val directoryContents = smh.list(dir = it, paging = false)
-                directoryContents.contents.forEach {
-                    try {
-                        smh.delete(it.name)
-                    } catch (e: SMHException) {
-                        Assert.assertTrue(e.statusCode == 404)
-                    }
-                }
-                smh.deleteDirectory(it)
-            }
-
-            val after = smh.listDirectory()
-            Assert.assertTrue(after.isEmpty())
+            val directories = smh.listAll(Directory(""))
         }
     }
 
-    @Test
-    fun testUploadTask() {
 
+    private suspend fun uploadFile(key: String, size: Long): UploadFileResult {
 
+        val file = File.createTempFile("read", ".txt")
+        createFile(file, size)
+        val uploadFileRequest = UploadFileRequest(
+            key = key,
+            Uri.fromFile(file)
+        )
 
+        val uploadTask = SMHUploadTask(
+            context,
+            smh,
+            uploadFileRequest
+        )
+
+        uploadTask.start()
+
+        return uploadTask.getResultOrThrow() as UploadFileResult
     }
+
 }
