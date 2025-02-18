@@ -25,13 +25,12 @@ import android.content.Context
 import android.util.Log
 import bolts.CancellationTokenSource
 import com.tencent.cloud.smh.*
+import com.tencent.cloud.smh.api.SMHService
+import com.tencent.cloud.smh.ext.cosService
 import com.tencent.cloud.smh.track.*
 import com.tencent.cos.xml.common.ClientErrorCode
 import com.tencent.cos.xml.exception.CosXmlClientException
 import com.tencent.cos.xml.exception.CosXmlServiceException
-import com.tencent.cos.xml.ktx.cosService
-import com.tencent.cos.xml.model.`object`.UploadRequest
-import com.tencent.cos.xml.transfer.COSTransferTask
 import com.tencent.qcloud.core.logger.QCloudLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +39,7 @@ import java.math.BigInteger
 import java.util.*
 import java.util.concurrent.Executor
 import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
 
@@ -82,7 +82,9 @@ abstract class SMHTransferTask(val context: Context,
         cosService(context = context) {
             configuration {
                 setRegion("ap-guangzhou") // 一个有效值即可
-                isHttps(true)
+                isHttps(SMHService.isHttps())
+                setDebuggable(smhCollection.isDebuggable)
+                setDomainSwitch(false)
             }
         }, smhCollection)
 
@@ -92,6 +94,8 @@ abstract class SMHTransferTask(val context: Context,
     var mClientException: SMHClientException? = null
         protected set
     protected var smhKey: String
+    // 内部异常是否已经重试
+    private var internalExceptionRetry = false
 
     init {
         transferApiProxy = transferApi
@@ -107,6 +111,17 @@ abstract class SMHTransferTask(val context: Context,
 
     // 启动传输
     open suspend fun start() {
+        startInit()
+        handle()
+    }
+
+    //恢复传输
+    open suspend fun resume() {
+        startInit()
+        handle()
+    }
+
+    private fun startInit(){
         smhStateListener = transferRequest.stateListener
         smhProgressListener = transferRequest.progressListener
         smhResultListener = transferRequest.resultListener
@@ -116,7 +131,6 @@ abstract class SMHTransferTask(val context: Context,
         mClientException = null
         onTransferWaiting()
         cts = CancellationTokenSource()
-        handle()
     }
 
     fun setExecutor(executor: Executor) {
@@ -149,9 +163,22 @@ abstract class SMHTransferTask(val context: Context,
         val eventCode = getTrackEventCode()
         val startTime = System.currentTimeMillis()
         try {
-            onTransferInProgress()
+            val start = System.nanoTime()
             checking()
-            transferResult = execute()
+            Log.e(TAG,
+                "checking_time=${
+                    java.lang.String.valueOf(
+                        TimeUnit.MILLISECONDS.convert(
+                            System.nanoTime() - start,
+                            TimeUnit.NANOSECONDS
+                        )
+                    )}")
+            onTransferRunBefore()
+            runBefore()
+            onTransferInProgress()
+            execute()
+            onTransferRunAfter()
+            transferResult = runAfter()
 
             // 上报传输成功
             eventCode?.let {
@@ -167,15 +194,20 @@ abstract class SMHTransferTask(val context: Context,
 
             onTransferSuccess(transferRequest, transferResult!!)
         } catch (exception: SMHClientException) {
+            exception.printStackTrace()
+            QCloudLogger.e(tag(), "transfer with SMHClientException: code ${exception.code}, message is ${exception.message}")
             // 手动取消和暂停报错不在这里回调，否则可能会长时间阻塞
             mClientException = exception
         } catch (exception: SMHException) {
+            exception.printStackTrace()
+            QCloudLogger.e(tag(), "transfer with SMHException: code ${exception.errorCode}, message is ${exception.errorMessage}, smhRequestId is ${exception.smhRequestId}, requestId is ${exception.requestId}")
             mServerException = exception
         } catch (exception: CosXmlClientException) {
+            exception.printStackTrace()
             QCloudLogger.e(tag(), "transfer with CosXmlClientException: code ${exception.errorCode}, message is ${exception.message}")
             mClientException = when(exception.errorCode) {
-                    200032, 200033, 200034, 200035, 200036, 20003, 20004 -> PoorNetworkException
-                    10000 -> if (exception.message == "upload file does not exist") {
+                    10004, 20002, 20003 -> PoorNetworkException
+                    10000, 10002 -> if (exception.message == "upload file does not exist") {
                         FileNotFoundException
                     } else {
                         InvalidArgumentException
@@ -187,17 +219,27 @@ abstract class SMHTransferTask(val context: Context,
                 }
 
         } catch (exception: CosXmlServiceException) {
+            exception.printStackTrace()
+            QCloudLogger.e(tag(), "transfer with CosXmlServiceException: code ${exception.errorCode}, message is ${exception.errorMessage}, requestId is ${exception.requestId}")
             mServerException = SMHException(
                 errorCode = exception.errorCode,
                 errorMessage = exception.errorMessage,
+                requestId = exception.requestId?: "",
                 statusCode = exception.statusCode,
-                message = exception.message?: "")
+                message = exception.message?: ""
+            )
         } catch (exception: Exception) {
+            exception.printStackTrace()
+            QCloudLogger.e(tag(), "transfer with Exception: message is ${exception.message}, stackTrace is ${exception.stackTrace}")
             mClientException = ClientInternalException(exception.message)
 
         } finally {
-
             if (!isManualPaused && !isManualCanceled) {
+                if(!internalExceptionRetry && mClientException is ClientInternalException){
+                    internalExceptionRetry = true
+                    resume()
+                }
+
                 if (mClientException != null || mServerException != null) {
                     onTransferFailed(transferRequest, mClientException, mServerException)
                     Log.e("QCloudHttp", "client ${mClientException}, server ${mServerException}")
@@ -246,14 +288,25 @@ abstract class SMHTransferTask(val context: Context,
      * @throws SMHClientException
      */
     @Throws(SMHClientException::class)
-    protected abstract suspend fun checking()
+    protected abstract fun checking()
 
+    protected open suspend fun runBefore() = Unit
 
     @Throws(SMHClientException::class, SMHException::class)
-    protected abstract suspend fun execute(): SMHTransferResult
+    protected abstract suspend fun execute()
+
+    /**
+     * 运行结束后返回结果，一般用于校验等
+     */
+    protected abstract suspend fun runAfter(): SMHTransferResult
 
     protected fun onTransferWaiting() {
         taskState = SMHTransferState.WAITING
+        notifySMHTransferStateChange()
+    }
+
+    protected fun onTransferRunBefore() {
+        taskState = SMHTransferState.RUN_BEFORE
         notifySMHTransferStateChange()
     }
 
@@ -264,6 +317,11 @@ abstract class SMHTransferTask(val context: Context,
 
     protected fun onTransferPaused() {
         taskState = SMHTransferState.PAUSED
+        notifySMHTransferStateChange()
+    }
+
+    protected fun onTransferRunAfter() {
+        taskState = SMHTransferState.RUN_AFTER
         notifySMHTransferStateChange()
     }
 
@@ -282,6 +340,8 @@ abstract class SMHTransferTask(val context: Context,
         transferRequest: SMHTransferRequest, clientException: SMHClientException?,
         smhException: SMHException?
     ) {
+        if(taskState == SMHTransferState.FAILURE) return
+
         this.mClientException = clientException
         this.mServerException = smhException
         taskState = SMHTransferState.FAILURE
@@ -295,12 +355,15 @@ abstract class SMHTransferTask(val context: Context,
 
     private fun notifySMHTransferStateChange() {
         smhStateListener?.onStateChange(transferRequest, taskState)
+        Log.e(TAG, "transfer_State=$taskState")
     }
 
     private fun notifyTransferProgressChange(complete: Long, target: Long) {
-        if (smhProgressListener != null && taskState === SMHTransferState.RUNNING) {
+        if (smhProgressListener != null &&
+            (taskState === SMHTransferState.RUNNING || taskState === SMHTransferState.RUN_BEFORE)) {
             smhProgressListener!!.onProgressChange(transferRequest, complete, target)
         }
+//        QCloudLogger.i(TAG, "transfer_Progress = $complete-$target")
     }
 
     private fun notifySMHTransferResultSuccess(

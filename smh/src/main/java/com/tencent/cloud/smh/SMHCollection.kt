@@ -24,31 +24,38 @@ import android.text.TextUtils
 import com.google.gson.Gson
 import com.tencent.cloud.smh.api.SMHService
 import com.tencent.cloud.smh.api.SMHService.Companion.baseUrl
-import com.tencent.cloud.smh.api.adapter.*
 import com.tencent.cloud.smh.api.data
 import com.tencent.cloud.smh.api.dataOrNull
 import com.tencent.cloud.smh.api.model.*
+import com.tencent.cloud.smh.api.retrofit.checkSuccess
+import com.tencent.cloud.smh.api.retrofit.code
+import com.tencent.cloud.smh.api.retrofit.data
+import com.tencent.cloud.smh.api.retrofit.header
+import com.tencent.cloud.smh.api.retrofit.headers
+import com.tencent.cloud.smh.api.retrofit.isSuccess
 import com.tencent.cloud.smh.ext.cosPathEncode
+import com.tencent.cloud.smh.ext.formatToUtc
 import com.tencent.cloud.smh.ext.runWithSuspend
-import com.tencent.cloud.smh.track.SMHBeaconKey
 import com.tencent.cloud.smh.track.SMHFailureRequestTrackEvent
 import com.tencent.cloud.smh.track.SMHSuccessRequestTrackEvent
 import com.tencent.cloud.smh.transfer.*
-import com.tencent.cos.xml.listener.CosXmlProgressListener
+import com.tencent.cloud.smh.utils.Utils
+import com.tencent.cos.xml.common.VersionInfo
 import com.tencent.qcloud.core.http.QCloudHttpClient
 import com.tencent.qcloud.core.http.QCloudHttpRequest
+import com.tencent.qcloud.core.logger.AndroidLogcatAdapter
+import com.tencent.qcloud.core.logger.QCloudLogger
 import com.tencent.qcloud.core.task.TaskExecutors
-import com.tencent.qcloud.core.track.TrackService
+import com.tencent.qcloud.track.Constants
+import com.tencent.qcloud.track.QCloudTrackService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.withContext
-import java.io.File
+import java.io.InputStream
 import java.math.BigDecimal
 import java.net.URL
 import java.util.*
 import java.util.concurrent.Executor
-import kotlin.collections.ArrayList
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -63,7 +70,9 @@ import kotlin.coroutines.CoroutineContext
 class SMHCollection @JvmOverloads constructor(
     private val context: Context,
     internal val user: SMHUser,
-    private val transfer: COSFileTransfer = COSFileTransfer(context),
+    val isDebuggable: Boolean = false,
+    customHost: String = "",
+    isPrivate: Boolean = false,
 ) {
 
     private val httpClient = QCloudHttpClient.getDefault()
@@ -75,7 +84,27 @@ class SMHCollection @JvmOverloads constructor(
     private val gson = Gson()
 
     init {
-        TrackService.init(context, SMHBeaconKey, BuildConfig.DEBUG)
+        if(isDebuggable) {
+            QCloudLogger.addAdapter(AndroidLogcatAdapter())
+        }
+
+        SMHService.customHost = customHost
+        SMHService.isPrivate = isPrivate
+
+        var packageName = ""
+        var versionName = ""
+        try {
+            packageName = context.packageName
+            val packageInfo = context.packageManager.getPackageInfo(packageName, 0)
+            versionName = packageInfo.versionName
+        } catch (_: Exception){}
+        SMHService.userAgent = "app:$packageName/$versionName-sdk:${VersionInfo.getUserAgent()}"
+
+        // 初始化QCloudTrack
+        QCloudTrackService.getInstance().init(context.applicationContext)
+        QCloudTrackService.getInstance().setDebug(isDebuggable)
+        // 启动上报
+        reportSdkStart()
     }
 
     @Synchronized
@@ -173,6 +202,7 @@ class SMHCollection @JvmOverloads constructor(
                     subDirCount = directoryContents.subDirCount,
                     totalNum = directoryContents.totalNum,
                     authorityList = directoryContents.authorityList,
+                    authorityButtonList = directoryContents.authorityButtonList,
                     localSync = directoryContents.localSync,
                     contents = contents
                 )
@@ -211,6 +241,7 @@ class SMHCollection @JvmOverloads constructor(
                     subDirCount = directoryContents.subDirCount,
                     totalNum = directoryContents.totalNum,
                     authorityList = directoryContents.authorityList,
+                    authorityButtonList = directoryContents.authorityButtonList,
                     localSync = directoryContents.localSync,
                     contents = contents,
                 )
@@ -238,9 +269,9 @@ class SMHCollection @JvmOverloads constructor(
         orderType: OrderType? = null,
         orderDirection: OrderDirection? = null,
         directoryFilter: DirectoryFilter? = null,
+        withInode: Boolean = false,
+        withFavoriteStatus: Boolean = false,
     ): DirectoryContents {
-
-
         return runWithBeaconReport(RequestNameListDirectoryWithPage, dir.path) { accessToken ->
             SMHService.shared.listDirectoryByPageSize(
                 libraryId = libraryId,
@@ -253,7 +284,13 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection,
                 directoryFilter = directoryFilter,
-            ).data
+                withInode = if(withInode) 1 else 0,
+                withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
+            ).data.also { directoryContents ->
+                directoryContents.contents.forEach { content ->
+                    content.metaData = Utils.metaDataTrim(content.metaData)
+                }
+            }
         }
     }
 
@@ -281,6 +318,8 @@ class SMHCollection @JvmOverloads constructor(
         orderDirection: OrderDirection? = null,
         directoryFilter: DirectoryFilter? = null,
         eTag: String? = null,
+        withInode: Boolean = false,
+        withFavoriteStatus: Boolean = false,
     ): DirectoryContents {
 
         return runWithBeaconReport(RequestNameListDirectoryWithMarker, dir.path) { accessToken ->
@@ -295,8 +334,14 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection,
                 directoryFilter = directoryFilter,
-                eTag = eTag
-            ).data
+                eTag = eTag,
+                withInode = if(withInode) 1 else 0,
+                withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
+            ).data.also { directoryContents ->
+                directoryContents.contents.forEach { content ->
+                    content.metaData = Utils.metaDataTrim(content.metaData)
+                }
+            }
         }
     }
 
@@ -320,6 +365,8 @@ class SMHCollection @JvmOverloads constructor(
         orderType: OrderType? = null,
         orderDirection: OrderDirection? = null,
         directoryFilter: DirectoryFilter? = null,
+        withInode: Boolean = false,
+        withFavoriteStatus: Boolean = false,
     ): DirectoryContents {
 
         return runWithBeaconReport("ListDirectoryWithOffset", dir.path) { accessToken ->
@@ -334,7 +381,13 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection,
                 directoryFilter = directoryFilter,
-            ).data
+                withInode = if(withInode) 1 else 0,
+                withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
+            ).data.also { directoryContents ->
+                directoryContents.contents.forEach { content ->
+                    content.metaData = Utils.metaDataTrim(content.metaData)
+                }
+            }
         }
     }
 
@@ -359,31 +412,42 @@ class SMHCollection @JvmOverloads constructor(
      * @param encode 文件路径是否已经 url 编码
      */
     @JvmOverloads
-    suspend fun getDownloadAccessUrl(path: String, historyId: Long? = null, encode: Boolean = false): String {
+    suspend fun getDownloadAccessUrl(
+        path: String,
+        historyId: Long? = null,
+        encode: Boolean = false,
+        purpose: Purpose = Purpose.DOWNLOAD
+    ): String {
         val encodePath = if (encode) {
             path
         } else {
             path.cosPathEncode()
         }
-        return retryWhenTokenExpired() { accessToken ->
+        return retryWhenTokenExpired { accessToken ->
             "${baseUrl()}api/v1/file/$libraryId/${userSpace.spaceId}/${encodePath}?"
-                .query("history_id", historyId)
+                .query("history_id", historyId).query("purpose", purpose)
                 .query("access_token", accessToken).query("user_id", userSpace.userId)
         }
     }
-
 
     /**
      * 获取文档预览链接
      * @param filePath 文件路径
      * @param historyId 历史版本号
+     * @param purpose 用途
      */
     @JvmOverloads
-    suspend fun getPreviewAccessUrl(filePath: String, historyId: Long? = null,): String {
-        return retryWhenTokenExpired() { accessToken ->
-            "${baseUrl()}api/v1/file/${libraryId}/${userSpace.spaceId}/${filePath.cosPathEncode()}?preview"
-                .query("history_id", historyId)
+    suspend fun getPreviewAccessUrl(
+        filePath: String,
+        historyId: Long? = null,
+        purpose: Purpose? = null,
+        lang: String = "zh-CN"
+    ): String {
+        return retryWhenTokenExpired { accessToken ->
+            "${baseUrl()}api/v1/file/${libraryId}/${userSpace.spaceId}/${filePath.cosPathEncode()}?preview&mobile"
+                .query("history_id", historyId).query("purpose", purpose)
                 .query("access_token", accessToken).query("user_id", userSpace.userId)
+                .query("lang", lang)
         }
     }
 
@@ -397,18 +461,33 @@ class SMHCollection @JvmOverloads constructor(
      * @param scale 缩放尺寸
      * @param widthSize 图片宽度
      * @param heightSize 图片高度
+     * @param frameNumber 帧数，针对 gif 的降帧处理；
+     * @param purpose 用途
      */
     @JvmOverloads
-    suspend fun getThumbnailAccessUrl(name: String, dir: Directory = rootDirectory, historyId: Long? = null,
-                                      size: Int? = null, scale: Int? = null,
-                                      widthSize: Int? = null, heightSize: Int? = null): String {
-
+    suspend fun getThumbnailAccessUrl(
+        name: String,
+        dir: Directory = rootDirectory,
+        historyId: Long? = null,
+        size: Int? = null,
+        scale: Int? = null,
+        widthSize: Int? = null,
+        heightSize: Int? = null,
+        frameNumber: Int? = null,
+        purpose: Purpose? = null
+    ): String {
         val filePath = smhKey(dir.path, name)
-        return retryWhenTokenExpired() { accessToken ->
-            "${baseUrl()}api/v1/file/${libraryId}/${userSpace.spaceId}/${filePath.cosPathEncode()}?preview"
+        return retryWhenTokenExpired { accessToken ->
+            "${baseUrl()}api/v1/file/${libraryId}/${userSpace.spaceId}/${filePath.cosPathEncode()}?preview&mobile"
                 .query("history_id", historyId)
-                .query("size", size).query("scale", scale).query("width_size", widthSize).query("height_size", heightSize)
-                .query("access_token", accessToken).query("user_id", userSpace.userId)
+                .query("purpose", purpose)
+                .query("size", size)
+                .query("scale", scale)
+                .query("width_size", widthSize)
+                .query("height_size", heightSize)
+                .query("frame_number", frameNumber)
+                .query("access_token", accessToken)
+                .query("user_id", userSpace.userId)
         }
     }
 
@@ -455,12 +534,40 @@ class SMHCollection @JvmOverloads constructor(
     /**
      * 初始化搜索，可能会返回一定量的搜索结果
      *
-     * @param keyword 搜索关键字
-     * @param scope 搜索范围
+     * @param keyword 搜索关键字，可使用空格分隔多个关键字，关键字之间为“或”的关系并优先展示匹配关键字较多的项目
      * @param searchTypes 搜索的文件类型
+     * @param tags 搜索标签
+     * @param scope 搜索范围，指定搜索的目录，如搜索根目录可指定为空字符串、“/”或不指定该字段
+     * @param extname 搜索文件后缀，字符串数组
+     * @param creators 搜索创建/更新者
+     * @param minFileSize 搜索文件大小范围，单位 Byte
+     * @param maxFileSize 搜索文件大小范围，单位 Byte
+     * @param modificationTimeStart 搜索更新时间范围，时间戳字符串，与时区无关
+     * @param modificationTimeEnd 搜索更新时间范围，时间戳字符串，与时区无关
+     * @param orderBy 排序字段，可选参数，当前支持按名称、修改时间、文件大小、创建时间排序具体类型如下：
+     * name：按名称排序。
+     * modificationTime：按修改时间排序。
+     * size：按文件大小排序。
+     * creationTime：按创建时间排序。
+     * @param orderByType 排序方式，升序为 asc，降序为 desc，可选参数。
      */
     @JvmOverloads
-    suspend fun initSearch(keyword: String?, scope: String? = null, searchTypes: List<SearchType>): SearchPartContent {
+    suspend fun initSearch(
+        searchTypes: List<SearchType>,
+        keyword: String? = null,
+        scope: String? = null,
+        tags: List<SearchTag>? = null,
+        extname: List<String>? = null,
+        creators: List<SearchCreator>? = null,
+        minFileSize: Long? = null,
+        maxFileSize: Long? = null,
+        modificationTimeStart: String? = null,
+        modificationTimeEnd: String? = null,
+        orderBy: OrderType? = null,
+        orderByType: OrderDirection? = null,
+        withInode: Boolean = false,
+        withFavoriteStatus: Boolean = false,
+    ): SearchPartContent {
 
         return runWithBeaconReport("InitSearch", keyword) { accessToken ->
             SMHService.shared.initSearch(
@@ -468,7 +575,16 @@ class SMHCollection @JvmOverloads constructor(
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 userId = userSpace.userId,
-                initSearch = InitSearchMedia(keyword, scope, searchTypes)
+                withInode = if(withInode) 1 else 0,
+                withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
+                initSearch = InitSearchMedia(
+                    searchTypes, keyword, scope,
+                    tags ?: emptyList(),
+                    extname ?: emptyList(),
+                    creators ?: emptyList(),
+                    minFileSize, maxFileSize, modificationTimeStart, modificationTimeEnd,
+                    orderBy, orderByType
+                )
             ).data
         }
 
@@ -529,9 +645,7 @@ class SMHCollection @JvmOverloads constructor(
         orderDirection: OrderDirection? = null,
     ): RecycledContents {
         return runWithBeaconReport("ListRecycled", null) { accessToken ->
-            val contents = ArrayList<RecycledItem>()
-
-            val recycledContents = SMHService.shared.listRecycled(
+            SMHService.shared.listRecycled(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -541,9 +655,6 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection
             ).data
-            val totalNum = recycledContents.totalNum
-            contents.addAll(recycledContents.contents)
-            RecycledContents(totalNum = totalNum, contents = contents)
         }
     }
 
@@ -556,9 +667,7 @@ class SMHCollection @JvmOverloads constructor(
         eTag: String? = null
     ): RecycledContents  {
         return runWithBeaconReport("ListRecycledWithMarker", null) { accessToken ->
-            val contents = ArrayList<RecycledItem>()
-
-            val recycledContents = SMHService.shared.listRecycledWithMarker(
+            SMHService.shared.listRecycledWithMarker(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -569,9 +678,6 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection
             ).data
-            val totalNum = recycledContents.totalNum
-            contents.addAll(recycledContents.contents)
-            RecycledContents(totalNum = totalNum, contents = contents)
         }
     }
 
@@ -699,13 +805,15 @@ class SMHCollection @JvmOverloads constructor(
      * @param name 文件名，如果没有设置文件夹，则为文件路径
      * @param dir 所在文件夹，默认是根目录下
      * @param historyId 历史版本号
+     * @param purpose 用途
      * @return 文件信息
      */
     @JvmOverloads
     suspend fun getFileInfo(
         name: String,
         dir: Directory = rootDirectory,
-        historyId: Long? = null
+        historyId: Long? = null,
+        purpose: Purpose? = null
     ): FileInfo {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("GetFileInfo", filePath) { accessToken ->
@@ -714,8 +822,11 @@ class SMHCollection @JvmOverloads constructor(
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 historyId = historyId,
+                purpose = purpose,
                 accessToken = accessToken
-            ).data
+            ).data.also { fileInfo ->
+                fileInfo.metaData = Utils.metaDataTrim(fileInfo.metaData)!!
+            }
         }
     }
 
@@ -734,7 +845,9 @@ class SMHCollection @JvmOverloads constructor(
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dir.path?: "",
                 accessToken = accessToken
-            ).data
+            ).data.also { directoryInfo ->
+                directoryInfo.metaData = Utils.metaDataTrim(directoryInfo.metaData)!!
+            }
         }
     }
 
@@ -744,12 +857,21 @@ class SMHCollection @JvmOverloads constructor(
      * @param name 文件名，如果没有设置文件夹，则为文件路径
      * @param dir 所在文件夹，默认是根目录下
      * @param size 生成的预览图尺寸
-     *
+     * @param scale 等比例缩放百分比，可选参数，不传 Size 时生效；
+     * @param widthSize 缩放宽度，不传高度时，高度按等比例缩放，不传 Size 和 Scale 时生效；
+     * @param heightSize 缩放高度，不传宽度时，宽度按等比例缩放，不传 Size 和 Scale 时生效；
+     * @param frameNumber 帧数，针对 gif 的降帧处理；
+     * @param purpose 用途，可选参数，列表页传 list、预览页传 preview（默认）；
      */
     @JvmOverloads
     suspend fun getThumbnail(name: String,
-                                    dir: Directory = rootDirectory,
-                                    size: Int? = null
+                             dir: Directory = rootDirectory,
+                             size: Int? = null,
+                             scale: Int? = null,
+                             widthSize: Int? = null,
+                             heightSize: Int? = null,
+                             frameNumber: Int? = null,
+                             purpose: Purpose? = null
     ): ThumbnailResult {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("GetThumbnail", filePath) { accessToken ->
@@ -758,6 +880,11 @@ class SMHCollection @JvmOverloads constructor(
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 size = size,
+                scale = scale,
+                widthSize = widthSize,
+                heightSize = heightSize,
+                frameNumber = frameNumber,
+                purpose = purpose,
                 accessToken = accessToken,
                 userId = userSpace.userId
             )
@@ -765,6 +892,43 @@ class SMHCollection @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 快速上传
+     * 不建议直接使用，而是使用高级上传，其中包含了quickUpload的逻辑
+     *
+     * @param name 文件名，如果没有设置文件夹，则为文件路径
+     * @param dir 所在文件夹，默认是根目录下
+     * @param uri 本地文件 URI
+     * @param conflictStrategy 冲突处理方式
+     * @return 上传信息 http状态码为202代表文件头hash命中
+     */
+    @JvmOverloads
+    suspend fun quickUpload(
+        name: String,
+        dir: Directory = rootDirectory,
+        quickUpload: QuickUpload,
+        conflictStrategy: ConflictStrategy? = null,
+        meta: Map<String, String>? = null
+    ): RawResponse {
+        val filePath = smhKey(dir.path, name)
+        val mutableMap: MutableMap<String, String> =
+            meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }?.toMutableMap() ?: emptyMap<String, String>().toMutableMap()
+        mutableMap["${X_SMH_META_KEY_PREFIX}creation-date"] = Date().formatToUtc()
+        return runWithBeaconReport("InitUpload", filePath) { accessToken ->
+            val smhResponse = SMHService.shared.quickUpload(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                filePath = filePath,
+                accessToken = accessToken,
+                quickUpload = quickUpload,
+                conflictStrategy = conflictStrategy,
+                metaData = mutableMap
+            )
+            val data = smhResponse.data
+            data.statusCode = smhResponse.code()
+            data
+        }
+    }
 
     /**
      * 初始化简单上传
@@ -773,6 +937,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param meta 文件元数据
      * @param dir 所在文件夹，默认是根目录下
      * @param conflictStrategy 冲突处理方式
+     * @param filesize 上传文件大小，单位为字节（Byte），用于判断剩余空间是否足够
      * @return 上传信息
      */
     @JvmOverloads
@@ -780,17 +945,19 @@ class SMHCollection @JvmOverloads constructor(
         name: String,
         meta: Map<String, String>? = null,
         dir: Directory = rootDirectory,
-        conflictStrategy: ConflictStrategy? = null
+        conflictStrategy: ConflictStrategy? = null,
+        filesize: Long? = null
     ): InitUpload {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("InitUpload", filePath) { accessToken ->
-            val metaData = meta?.mapKeys { "x-smh-meta-${it.key}" }
+            val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
             SMHService.shared.initUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
                 conflictStrategy = conflictStrategy,
+                filesize = filesize,
                 metaData = metaData ?: emptyMap()
             ).data
         }
@@ -803,31 +970,100 @@ class SMHCollection @JvmOverloads constructor(
      * @param meta 文件元数据
      * @param dir 所在文件夹，默认是根目录下
      * @param conflictStrategy 冲突处理方式
+     * @param filesize 上传文件大小，单位为字节（Byte），用于判断剩余空间是否足够
+     * @return 上传信息
+     */
+    @JvmOverloads
+    suspend fun publicInitMultipartUpload(
+        name: String,
+        meta: Map<String, String>? = null,
+        dir: Directory = rootDirectory,
+        conflictStrategy: ConflictStrategy? = null,
+        filesize: Long? = null
+    ): InitUpload {
+        val filePath = smhKey(dir.path, name)
+        return runWithBeaconReport("InitMultipartUpload", filePath) { accessToken ->
+            val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
+            SMHService.shared.publicInitMultipartUpload(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                filePath = filePath,
+                accessToken = accessToken,
+                conflictStrategy = conflictStrategy,
+                filesize = filesize,
+                metaData = metaData ?: emptyMap()
+            ).data
+        }
+    }
+
+    /**
+     * 列出分片上传任务信息
+     *
+     * @param confirmKey 上传任务的 confirmKey
+     * @return 上传信息
+     */
+    suspend fun publicListMultipartUpload(confirmKey: String): PublicMultiUploadMetadata {
+        val meta = runWithBeaconReport("GetMultipartUploadMetadata", confirmKey) { accessToken ->
+            SMHService.shared.publicListMultipartUpload(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                confirmKey = confirmKey,
+                accessToken = accessToken
+            ).data
+        }
+        meta.confirmKey = confirmKey
+        return meta
+    }
+
+    /**
+     * 用于分块上传任务续期
+     *
+     * @param confirmKey 上传任务的 confirmKey
+     * @return 上传信息
+     */
+    suspend fun publicRenewMultipartUpload(confirmKey: String): InitUpload {
+        return runWithBeaconReport("RenewMultipartUpload", confirmKey) { accessToken ->
+            SMHService.shared.publicRenewMultipartUpload(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                confirmKey = confirmKey,
+                accessToken = accessToken
+            ).data
+        }
+    }
+
+    /**
+     * 初始化分块上传
+     *
+     * @param name 文件名，如果没有设置文件夹，则为文件路径
+     * @param partNumberRange 格式为逗号分隔的 区段，区段 可以是 单个数字 n，也可以是 由两个数字组成的范围 n-m
+     * @param meta 文件元数据
+     * @param dir 所在文件夹，默认是根目录下
+     * @param conflictStrategy 冲突处理方式
+     * @param filesize 上传文件大小，单位为字节（Byte），用于判断剩余空间是否足够
      * @return 上传信息
      */
     @JvmOverloads
     suspend fun initMultipartUpload(
         name: String,
+        partNumberRange: String,
         meta: Map<String, String>? = null,
         dir: Directory = rootDirectory,
         conflictStrategy: ConflictStrategy? = null,
-        overrideOnNameConflict: Boolean? = true
-    ): InitUpload {
+        filesize: Long? = null
+    ): InitMultipartUpload {
         val filePath = smhKey(dir.path, name)
-        val compatConflictStrategy = if (overrideOnNameConflict == true) {
-            ConflictStrategy.OVERWRITE
-        } else {
-            conflictStrategy
-        }
         return runWithBeaconReport("InitMultipartUpload", filePath) { accessToken ->
-            val metaData = meta?.mapKeys { "x-smh-meta-${it.key}" }
+            val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
             SMHService.shared.initMultipartUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
-                conflictStrategy = compatConflictStrategy,
-                metaData = metaData ?: emptyMap()
+                conflictStrategy = conflictStrategy,
+                filesize = filesize,
+                metaData = metaData ?: emptyMap(),
+                partNumberRange = PartNumberRange(partNumberRange)
             ).data
         }
     }
@@ -852,29 +1088,22 @@ class SMHCollection @JvmOverloads constructor(
     }
 
     /**
-     * 分片上传
+     * 用于分块上传任务续期
      *
-     * @param metadata 文件元数据
-     * @param uri 本地文件 URI
-     * @param size 本地文件大小
-     * @return 上传成功返回的 eTag
+     * @param confirmKey 上传任务的 confirmKey
+     * @param partNumberRange 格式为逗号分隔的 区段，区段 可以是 单个数字 n，也可以是 由两个数字组成的范围 n-m
+     * @return 上传信息
      */
-    @JvmOverloads
-    suspend fun multipartUpload(metadata: MultiUploadMetadata, uri: Uri, size: Long, cancelHandler: CancelHandler? = null, cosXmlProgressListener: CosXmlProgressListener? = null): String? {
-        return transfer.multipartUpload(metadata, uri, size, cancelHandler, cosXmlProgressListener)
-    }
-
-
-    /**
-     * 简单上传
-     *
-     * @param uploader 上传信息
-     * @param uri 本地文件 URI
-     * @return 上传成功返回的 eTag
-     */
-    @JvmOverloads
-    suspend fun upload(uploader: InitUpload, uri: Uri, progressListener: CosXmlProgressListener? = null): String? {
-        return transfer.upload(uploader, uri, progressListener)
+    suspend fun renewMultipartUpload(confirmKey: String, partNumberRange: String): InitMultipartUpload {
+        return runWithBeaconReport("RenewMultipartUpload", confirmKey) { accessToken ->
+            SMHService.shared.renewMultipartUpload(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                confirmKey = confirmKey,
+                accessToken = accessToken,
+                partNumberRange = PartNumberRange(partNumberRange)
+            ).data
+        }
     }
 
     /**
@@ -909,8 +1138,62 @@ class SMHCollection @JvmOverloads constructor(
                 confirmKey = confirmKey,
                 confirmUploadRequestBody = ConfirmUploadRequestBody(crc64),
                 accessToken = accessToken,
-            ).data
+            ).data.also { confirmUpload ->
+                confirmUpload.metaData = Utils.metaDataTrim(confirmUpload.metaData)
+            }
         }
+    }
+
+    /**
+     * 高级上传
+     *
+     * @param name 文件名，如果没有设置文件夹，则为文件路径
+     * @param dir 所在文件夹，默认是根目录下
+     * @param uri 本地文件 URI
+     * @param inputStream 数据源流（数据源流需要外部在上传成功或失败后自行关闭）
+     * @param confirmKey 上传任务的 confirmKey
+     * @param conflictStrategy 冲突处理方式
+     * @param meta 文件元数据
+     * @param stateListener 状态监听器
+     * @param progressListener 进度监听器
+     * @param resultListener 结果监听器
+     * @param quickUpload 是否开启秒传（默认开启）
+     * @return 返回上传任务
+     */
+    @JvmOverloads
+    fun upload(
+        name: String,
+        dir: Directory = rootDirectory,
+        uri: Uri? = null,
+        inputStream: InputStream? = null,
+        confirmKey: String? = null,
+        conflictStrategy: ConflictStrategy? = null,
+        meta: Map<String, String>? = null,
+        stateListener: SMHStateListener? = null,
+        progressListener: SMHProgressListener? = null,
+        resultListener: SMHResultListener? = null,
+        initMultipleUploadListener: SMHInitMultipleUploadListener? = null,
+        quickUpload: Boolean = true
+    ): SMHUploadTask {
+        val filePath = smhKey(dir.path, name)
+        val uploadFileRequest = UploadFileRequest(
+            key = filePath,
+            localUri = uri,
+            inputStream = inputStream,
+            confirmKey = confirmKey,
+            conflictStrategy = conflictStrategy,
+            meta = meta
+        )
+        uploadFileRequest.stateListener = stateListener
+        uploadFileRequest.progressListener = progressListener
+        uploadFileRequest.resultListener = resultListener
+        uploadFileRequest.initMultipleUploadListener = initMultipleUploadListener
+        return SMHUploadTask(
+            context,
+            this,
+            uploadFileRequest,
+            quickUpload
+        )
     }
 
     /**
@@ -935,66 +1218,54 @@ class SMHCollection @JvmOverloads constructor(
             )
         }
         resp.checkSuccess()
-        val metaPrefix = "x-smh-meta-"
         return InitDownload(
             url = resp.header("Location"),
-            metaData = resp.headers().filterKeys { it.toLowerCase().startsWith(metaPrefix) }
-                .mapKeys { it.key.substring(metaPrefix.length) }
+            metaData = Utils.metaDataTrimByHeaders(resp.headers())
         )
     }
 
     /**
-     * 下载文件
+     * 高级下载
      *
-     * @param url 文件下载地址
-     * @param contentUri 本地文件 URI
-     * @param offset 请求文件偏移
+     * @param name 文件名，如果没有设置文件夹，则为文件路径
+     * @param dir 所在文件夹，默认是根目录下
+     * @param historyId 历史版本ID
+     * @param localFullPath 本地文件路径（为null时代表字节流返回形式 result中会返回字节流）
+     * @param stateListener 状态监听器
+     * @param progressListener 进度监听器
+     * @param resultListener 结果监听器
+     * @return 返回下载任务
      */
     @JvmOverloads
-    suspend fun download(url: String, contentUri: Uri, offset: Long = 0L, cancelHandler: CancelHandler? = null,
-        cosXmlProgressListener: CosXmlProgressListener? = null) {
-        val result = transfer.download(url, contentUri, offset, cancelHandler, cosXmlProgressListener)
-        withContext(Dispatchers.IO) {
-            // verify file size
-            context.contentResolver.openFileDescriptor(contentUri, "r")?.use {
-                val fileSize = it.statSize
-                result.headers.filterKeys { it.toLowerCase(Locale.ROOT) == "content-length" }
-                    .values.firstOrNull()?.firstOrNull()?.apply {
-                        val expected = toInt() + offset
-                        if (fileSize != expected) {
-                            throw SMHException(message = "File is Not Complete, Expected: $expected, Actual: $fileSize")
-                        }
-                    }
-
-            }
+    fun download(
+        name: String,
+        dir: Directory = rootDirectory,
+        historyId: Long? = null,
+        localFullPath: String? = null,
+        rangeStart: Long? = null,
+        rangeEnd: Long? = null,
+        stateListener: SMHStateListener? = null,
+        progressListener: SMHProgressListener? = null,
+        resultListener: SMHResultListener? = null
+    ): SMHDownloadTask {
+        val filePath = smhKey(dir.path, name)
+        val downloadFileRequest = DownloadFileRequest(
+            key = filePath,
+            historyId = historyId,
+            localFullPath = localFullPath
+        )
+        rangeStart?.let {
+            downloadFileRequest.setRange(it, rangeEnd)
         }
-    }
-
-    /**
-     * 下载文件
-     *
-     * @param url 文件下载地址
-     * @param contentUri 本地文件 URI
-     * @param offset 请求文件偏移
-     */
-    @JvmOverloads
-    suspend fun download(url: String, fullPath: String, offset: Long = 0L, cancelHandler: CancelHandler? = null,
-                         cosXmlProgressListener: CosXmlProgressListener? = null) {
-        val result = transfer.download(url, fullPath, offset, cancelHandler, cosXmlProgressListener)
-        withContext(Dispatchers.IO) {
-            // verify file size
-            context.contentResolver.openFileDescriptor(Uri.fromFile(File(fullPath)), "r")?.use {
-                val fileSize = it.statSize
-                result.headers.filterKeys { it.toLowerCase(Locale.ROOT) == "content-length" }
-                    .values.firstOrNull()?.firstOrNull()?.apply {
-                        val expected = toInt() + offset
-                        if (fileSize != expected) {
-                            throw SMHException(message = "File is Not Complete, Expected: $expected, Actual: $fileSize")
-                        }
-                    }
-
-            }
-        }
+        downloadFileRequest.stateListener = stateListener
+        downloadFileRequest.progressListener = progressListener
+        downloadFileRequest.resultListener = resultListener
+        val downloadTask = SMHDownloadTask(
+            context,
+            this,
+            downloadFileRequest
+        )
+        return downloadTask
     }
 
     /**
@@ -1016,7 +1287,7 @@ class SMHCollection @JvmOverloads constructor(
             SMHService.shared.deleteFile(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
-                permanent = permanent,
+                permanent = if(permanent) 1 else 0,
                 filePath = filePath,
                 accessToken = accessToken
             ).checkSuccess
@@ -1133,7 +1404,9 @@ class SMHCollection @JvmOverloads constructor(
                 accessToken = accessToken,
                 force = if (overrideOnNameConflict) 1 else 0,
                 linkTo = SymLinkBody(sourceFileName)
-            ).data
+            ).data.also { confirmUpload ->
+                confirmUpload.metaData = Utils.metaDataTrim(confirmUpload.metaData)
+            }
         }
     }
 
@@ -1213,6 +1486,31 @@ class SMHCollection @JvmOverloads constructor(
         }
     }
 
+    /**
+     * 跨空间复制目录
+     *
+     * @param copyFrom 被复制的源目录或相簿路径
+     * @param copyFromSpaceId 被复制的源空间 SpaceId
+     * @param dirPath 目标目录路径或相簿名，对于多级目录，使用斜杠(/)分隔，例如 foo/bar_new
+     * @param conflictResolutionStrategy 最后一级目录冲突时的处理方式，ask: 冲突时返回 HTTP 409 Conflict 及 SameNameDirectoryOrFileExists 错误码，rename: 冲突时自动重命名最后一级目录，默认为 ask
+     */
+    suspend fun asyncCopyCrossSpace(
+        copyFrom: String,
+        copyFromSpaceId: String,
+        dirPath: String,
+        conflictResolutionStrategy: ConflictStrategy? = null,
+    ): AsyncCopyCrossSpaceResult {
+        return runWithBeaconReport("AsyncCopyCrossSpace", dirPath) { accessToken ->
+            SMHService.shared.asyncCopyCrossSpace(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                dirPath = dirPath,
+                conflictResolutionStrategy = conflictResolutionStrategy,
+                request = AsyncCopyCrossSpaceRequest(copyFrom, copyFromSpaceId)
+            ).data
+        }
+    }
 
     /**
      * 查询批量任务
@@ -1225,6 +1523,25 @@ class SMHCollection @JvmOverloads constructor(
         val taskIdList = taskIds.joinToString(",")
         return runWithBeaconReport("QueryTasks", taskIds.getOrNull(0).toString()) { accessToken ->
             SMHService.shared.queryTasks(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                taskIdList = taskIdList
+            ).data
+        }
+    }
+
+    /**
+     * 查询批量任务 单result
+     *
+     * @param taskIds 任务 id
+     */
+    suspend fun queryTasksSingleResult(
+        taskIds: List<Long>
+    ): List<BatchResponseSingleResult> {
+        val taskIdList = taskIds.joinToString(",")
+        return runWithBeaconReport("QueryTasksSingleResult", taskIds.getOrNull(0).toString()) { accessToken ->
+            SMHService.shared.queryTasksSingleResult(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -1333,7 +1650,9 @@ class SMHCollection @JvmOverloads constructor(
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 historyId = historyId,
-            ).data
+            ).data.also { mediaContent ->
+                mediaContent.metaData = Utils.metaDataTrim(mediaContent.metaData)
+            }
         }
     }
 
@@ -1385,6 +1704,137 @@ class SMHCollection @JvmOverloads constructor(
     @JvmOverloads
     suspend fun download(request: DownloadRequest, executor: Executor? = null): DownloadResult {
         return execute(request, DownloadResult(), executor?: TaskExecutors.DOWNLOAD_EXECUTOR)
+    }
+
+    /**
+     * 用模板创建文件时如果文件已存在，则自动重命名
+     *
+     * @param name 文件名，如果没有设置文件夹，则为文件路径
+     * @param meta 文件元数据
+     * @param dir 所在文件夹，默认是根目录下
+     * @param request 指定模板名字
+     * @return 文件信息
+     */
+    @JvmOverloads
+    suspend fun createFileFromTemplate(
+        name: String,
+        dir: Directory = rootDirectory,
+        meta: Map<String, String>? = null,
+        request: CreateFileFromTemplateRequest
+    ): MediaContent {
+        val filePath = smhKey(dir.path, name)
+        return runWithBeaconReport("CreateFileFromTemplate", filePath) { accessToken ->
+            val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
+            SMHService.shared.createFileFromTemplate(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                filePath = filePath,
+                accessToken = accessToken,
+                metaData = metaData ?: emptyMap(),
+                request = request
+            ).data
+        }
+    }
+
+    /**
+     * 用于文档编辑
+     *
+     * @param name 文件名，如果没有设置文件夹，则为文件路径
+     * @param dir 所在文件夹，默认是根目录下
+     * @return 返回请求文档编辑的url
+     */
+    @JvmOverloads
+    suspend fun officeEditFile(name: String, dir: Directory = rootDirectory, lang: String = "zh-CN"): String {
+        val filePath = smhKey(dir.path, name)
+        return retryWhenTokenExpired() { accessToken ->
+            "${baseUrl()}api/v1/office/${libraryId}/${userSpace.spaceId}/edit/${filePath.cosPathEncode()}?mobile"
+                .query("access_token", accessToken).query("user_id", userSpace.userId).query("lang", lang)
+        }
+    }
+
+    /**
+     * 用于文档编辑校验
+     */
+    @JvmOverloads
+    suspend fun officeEditFileCheck(name: String, dir: Directory = rootDirectory, lang: String = "zh-CN") {
+        val filePath = smhKey(dir.path, name)
+        return runWithBeaconReport("OfficeEditFileCheck", null) { accessToken ->
+            SMHService.shared.officeEditFileCheck(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                path = filePath,
+                userId = userSpace.userId,
+                accessToken = accessToken,
+            ).checkSuccess()
+        }
+    }
+
+    /**
+     * 用于空间文件数量统计
+     */
+    @JvmOverloads
+    suspend fun getSpaceFileCount(
+    ): SpaceFileCount {
+        return runWithBeaconReport("GetSpaceFileCount", null) { accessToken ->
+            SMHService.shared.getSpaceFileCount(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+            ).data
+        }
+    }
+
+    /**
+     * 查询最近使用的文件列表
+     * @param marker 用于顺序列出分页的标识，可选参数，不传默认第一页
+     * @param limit 用于顺序列出分页时本地列出的项目数限制，可选参数，不传则默认20
+     * @param filterActionBy 筛选操作方式，可选，不传返回全部，preview 只返回预览操作，modify 返回编辑操作
+     * @param type 筛选文件类型，可选参数，字符串数组，当前支持的类型包括：
+     * all: 搜索所有文件，当不传 type 或传空时默认为 all；
+     * document: 搜索所有文档，文档类型为：['pdf', 'powerpoint', 'excel', 'word' 'text']
+     * pdf: 仅搜索 PDF 文档，对应的文件扩展名为 .pdf；
+     * powerpoint: 仅搜索演示文稿，如 .ppt、.pptx、.pot、.potx 等；
+     * excel: 仅搜索表格文件，如 .xls、.xlsx、.ett、.xltx、.csv 等；
+     * word: 仅搜索文档，如 .doc、.docx、.dot、.wps、.wpt 等；
+     * text: 仅搜索纯文本，如 .txt、.asp、.htm 等；
+     * doc、xls 或 ppt: 仅搜索 Word、Excel 或 Powerpoint 类型文档，对应的文件扩展名为 .doc(x)、.xls(x) 或 .ppt(x)；
+     * @param withPath 响应是否带文件路径，默认为 false
+     */
+    @JvmOverloads
+    suspend fun recentlyUsedFile(
+        marker: String? = null,
+        limit: Int? = null,
+        filterActionBy: String? = null,
+        type: List<String>? = null,
+        withPath: Boolean = false,
+        withFavoriteStatus: Boolean = false,
+    ): RecentlyUsedFileContents {
+        return runWithBeaconReport("RecentlyUsedFile", null) { accessToken ->
+            SMHService.shared.recentlyUsedFile(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                request = RecentlyUsedFileRequest(marker, limit, filterActionBy, type,
+                    withPath, withFavoriteStatus)
+            ).data
+        }
+    }
+
+    /**
+     * 查询 inode 文件信息（返回路径）
+     * @param inode 文件 ID
+     */
+    suspend fun getINodeInfo(
+        inode: String
+    ): INodeInfo {
+        return runWithBeaconReport("GetINodeInfo", inode) { accessToken ->
+            SMHService.shared.getINodeInfo(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                inode = inode
+            ).data
+        }
     }
 
     @Throws
@@ -1520,5 +1970,18 @@ fun SMHException.isTokenExpiredException(): Boolean {
      return if (TextUtils.isEmpty(directory)) name else "$directory/$name"
  }
 
-
-
+     /**
+      * 上报简单数据_SDK启动
+      */
+    private fun reportSdkStart() {
+         val params: MutableMap<String, String> = HashMap()
+         try {
+             params["sdk_name"] = "smh"
+             params["sdk_version_name"] = BuildConfig.SMH_VERSION_NAME
+             params["sdk_version_code"] = BuildConfig.SMH_VERSION_CODE.toString()
+             QCloudTrackService.getInstance()
+                 .reportSimpleData(Constants.SIMPLE_DATA_EVENT_CODE_START, params)
+         } catch (e: Exception) {
+             e.printStackTrace()
+         }
+     }

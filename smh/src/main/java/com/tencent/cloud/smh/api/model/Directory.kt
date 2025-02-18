@@ -44,5 +44,14 @@ data class FilesPath(
 
 data class FileId(
     val path: String,
-    val versionId: String? = null
+    val versionId: String? = null,
+    val spaceOrgId: Long? = null
+)
+
+/**
+ * 从模板创建文件请求
+ * @property fromTemplate 模板名字，当前支持 word.docx、excel.xlsx 和 powerpoint.pptx
+ */
+data class CreateFileFromTemplateRequest(
+    val fromTemplate: String,
 )

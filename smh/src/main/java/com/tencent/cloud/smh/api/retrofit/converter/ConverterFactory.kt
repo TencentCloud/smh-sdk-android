@@ -1,4 +1,4 @@
-package com.tencent.cloud.smh.api
+package com.tencent.cloud.smh.api.retrofit.converter
 
 import com.google.gson.annotations.SerializedName
 import retrofit2.Converter

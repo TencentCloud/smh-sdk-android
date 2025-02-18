@@ -40,19 +40,10 @@ data class AuthorityEntity(
 open class Role(
     val id: Int,
     val name: String,
-    val canView: Boolean,
-    val canPreview: Boolean,
-    val canDownload: Boolean,
-    val canUpload: Boolean,
-    val canDelete: Boolean,
-    val canModify: Boolean,
-    val canAuthorize: Boolean,
-    val canShare: Boolean,
     val roleDesc: String = "",
     val isDefault: Boolean,
     val isOwner: Boolean,
-): Parcelable {
-}
+): Parcelable
 
 @Parcelize
 data class MediaAuthority (
@@ -65,6 +56,8 @@ data class MediaAuthority (
     val canModify: Boolean,
     val canAuthorize: Boolean,
     val canShare: Boolean,
+    val canPreviewSelf: Boolean,
+    val canDownloadSelf: Boolean
 ): Parcelable {
 
     companion object {
@@ -78,8 +71,44 @@ data class MediaAuthority (
             canModify = true,
             canAuthorize = true,
             canShare = true,
+            canPreviewSelf = true,
+            canDownloadSelf = true
         )
+    }
+}
 
+@Parcelize
+data class MediaAuthorityButton (
+    val showViewButton: Boolean,
+    val showPreviewButton: Boolean,
+    val showDownloadButton: Boolean,
+    val showUploadButton: Boolean,
+    val showDeleteButton: Boolean,
+    val showAuthorizeButton: Boolean,
+    val showShareButton: Boolean,
+    val showModifyButton: Boolean,
+    val showMoveButton: Boolean,
+    val showRenameButton: Boolean,
+    val showCopyButton: Boolean,
+    val showRestoreButton: Boolean
+): Parcelable {
+
+    companion object {
+
+        fun newOwnerAuthorityButton() = MediaAuthorityButton(
+            showViewButton = true,
+            showPreviewButton = true,
+            showDownloadButton = true,
+            showUploadButton = true,
+            showDeleteButton = true,
+            showAuthorizeButton = true,
+            showShareButton = true,
+            showModifyButton = true,
+            showMoveButton = true,
+            showRenameButton = true,
+            showCopyButton = true,
+            showRestoreButton = true
+        )
     }
 }
 
@@ -105,6 +134,7 @@ data class AuthorizedItem(
     val creationTime: String,
     val modificationTime: String,
     val authorityList: MediaAuthority?,
+    val authorityButtonList: MediaAuthorityButton?,
     val path: List<String>,
     val team: TeamBrief,
     val user: UserBrief,

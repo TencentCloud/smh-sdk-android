@@ -42,3 +42,15 @@
 
 -keep public class * extends com.tencent.cloud.smh.SMHException
 -keep public class * extends com.tencent.cloud.smh.SMHClientException
+
+# cosxml
+-dontwarn com.tencent.cos.**
+-keep class com.tencent.cos.xml.**{*;}
+
+#foundation
+-keep class com.tencent.qcloud.cos.**{*;}
+
+# beacon
+-keep class com.tencent**qimei.** { *;}
+-keep class com.tencent.qmsp.oaid2.** {*;}
+-keep class com.tencent.beacon.** { *;}

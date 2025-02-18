@@ -20,6 +20,7 @@ apply plugin: 'maven-publish'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 apply plugin: 'org.jetbrains.dokka'
+apply plugin: 'com.kezong.fat-aar'
 
 dokkaHtml.configure {
     dokkaSourceSets {
@@ -29,12 +30,20 @@ dokkaHtml.configure {
     }
 }
 
-def smhVersionName = "1.1.3"
-def smhVersionCode = 10103
+//是否包含灯塔
+def includeBeacon = true
+
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+def smhVersionName = "1.2.33"
+def smhVersionCode = 10233
 
 android {
     compileSdkVersion 29
-    // buildToolsVersion "30.0.2"
 
     defaultConfig {
         minSdkVersion 21
@@ -44,22 +53,16 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
-
-        buildConfigField 'String', 'CUSTOM_HOST', "\"${getCustomApiHost()}\""
     }
 
     buildTypes {
 
         debug {
-
-            it.buildConfigField 'String', 'SMH_ID', quotWrapper(System.getenv("SMH_ID"))
-            it.buildConfigField 'String', 'SMH_KEY', quotWrapper(System.getenv("SMH_KEY"))
             it.buildConfigField 'String', 'SMH_VERSION_NAME', "\"$smhVersionName\""
             it.buildConfigField 'int', 'SMH_VERSION_CODE', "$smhVersionCode"
         }
 
         release {
-            debuggable true
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
 
@@ -83,61 +86,58 @@ android {
     }
 }
 
-dependencies {
-    implementation fileTree(dir: "libs", include: ["*.jar"])
+fataar {
+    /**
+     * If transitive is true, local jar module and remote library's dependencies will be embed.
+     * If transitive is false, just embed first level dependency
+     * Local aar project does not support transitive, always embed first level
+     * Default value is false
+     * @since 1.3.0
+     */
+    transitive = true
+}
 
+dependencies {
 //    implementation 'androidx.core:core-ktx:1.3.2'
 //    implementation 'androidx.appcompat:appcompat:1.2.0'
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.4.31"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.4.1"
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.4.3'
 
-//    compile project(':foundation')
-//    compile (project(configuration: 'default', path: ':cos-android'))
-//    compile project(':cos-android-ktx')
-//    compileOnly project(':xmlAnnoation')
+    implementation "com.squareup.retrofit2:retrofit:2.6.4"
+    implementation "com.squareup.retrofit2:converter-gson:2.6.4"
 
-    api 'com.qcloud.cos:cos-android:5.8.4'
-    api ('com.qcloud.cos:cos-ktx:5.6.5'){
-        exclude group: 'com.tencent.qcloud', module: 'beacon-android-release'
-        exclude group: 'com.qcloud.cos', module: 'cos-android'
+//    implementation project(':foundation')
+//    implementation project(':cos-android-base')
+//    implementation project(':qcloud-track')
+    implementation 'com.qcloud.cos:qcloud-foundation:1.5.69'
+    implementation 'com.qcloud.cos:qcloud-cos-android-base:5.9.32'
+    implementation 'com.qcloud.cos:qcloud-track:1.0.2'
+
+    if(includeBeacon){
+        embed('com.tencent.beacon:beacon-android-release:4.2.80.6:official@aar') {
+            exclude(group:'com.android.support', module:'support-annotations')
+            exclude(group:'androidx.annotation', module:'annotation')
+        }
+        embed('com.tencent.qimei:qimei:1.2.13.1') {
+            exclude(group:'com.android.support', module:'support-annotations')
+            exclude(group:'androidx.annotation', module:'annotation')
+        }
+    } else {
+        compileOnly 'com.tencent.beacon:beacon-android-release:4.2.80.6:official@aar'
+        compileOnly 'com.tencent.qimei:qimei:1.2.13.1'
     }
 
-    implementation 'com.squareup.retrofit2:retrofit:2.6.4'
-    implementation 'com.squareup.retrofit2:converter-gson:2.6.4'
-    implementation 'com.squareup.okhttp3:logging-interceptor:3.10.0'
-
-
-    // compileOnly 'com.tencent.beacon:beacon-android-release:4.2.57.1'
-
-
     // testImplementation for pure JVM unit tests
-    testImplementation 'junit:junit:4.13'
+    testImplementation 'junit:junit:4.13.2'
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.4.1"
 
 
     // androidTestImplementation for Android instrumentation tests
     androidTestImplementation 'androidx.test.ext:junit:1.1.2'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
-    androidTestImplementation 'androidx.test:rules:1.3.0'
+    androidTestImplementation "androidx.test:rules:1.3.0"
     androidTestImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.4.1"
-
-}
-
-// 优先 系统环境变量 -> Gradle Property
-def getCustomApiHost() {
-
-    Properties localProperties = new Properties()
-    if (file('local.properties').exists()) {
-        localProperties.load(project.rootProject.file('local.properties').newDataInputStream())
-    }
-
-    String sysEnvCustomHost = System.getenv("CUSTOM_SMH_API_HOST")
-
-    return  (sysEnvCustomHost != null && !sysEnvCustomHost.isEmpty())? sysEnvCustomHost:
-            localProperties.hasProperty("CUSTOM_SMH_API_HOST")? localProperties.getProperty("CUSTOM_SMH_API_HOST"):
-            hasProperty("CUSTOM_SMH_API_HOST")? CUSTOM_SMH_API_HOST : ""
-
 }
 
 task androidSourcesJar(type: Jar) {
@@ -150,56 +150,50 @@ task androidJavadocsJar(type: Jar, dependsOn: dokkaJavadoc) {
     from "$buildDir/dokka/javadoc"
 }
 
-task myTxxest() {
-
-    System.out.println("sonatypeUsername " + findProperty("ossrhUsername"))
-    System.out.println("sonatypePassword " + findProperty("ossrhPassword"))
+artifacts {
+    archives androidSourcesJar
+    archives androidJavadocsJar
 }
 
-project.extensions.add('artifactId', 'smh-android')
-project.extensions.add('artifactDesc', 'the core foundation for tencent cloud sdk')
-project.extensions.add('archiveFilePath', 'outputs/aar/smh-android-release.aar')
-
-//afterEvaluate {
-//    publishing {
-//        publications {
-//            // Creates a Maven publication called "release".
-//            release(MavenPublication) {
-//                // Applies the component for the release build variant.
-//                from components.release
-//
-//                artifact androidSourcesJar
-//                artifact androidJavadocsJar
-//
-//                // You can then customize attributes of the publication as shown below.
-//                groupId = 'com.qcloud.cos'
-//                artifactId = 'smh-android'
-//                version = '1.0.2'
-//            }
-//            // Creates a Maven publication called “debug”.
-//            debug(MavenPublication) {
-//                // Applies the component for the debug build variant.
-//                from components.debug
-//
-//                artifact androidSourcesJar
-//                artifact androidJavadocsJar
-//
-//                groupId = 'com.qcloud.cos'
-//                artifactId = 'smh-android-debug'
-//                version = '1.0.2'
-//            }
-//        }
-//    }
-//}
-
-static String quotWrapper(key) {
-    if (key == null) {
-        return "\"\""
-    }
-    return "\"".concat(key).concat("\"")
+if(includeBeacon) {
+    project.extensions.add('artifactId', 'smh-android')
+    project.extensions.add('artifactDesc', 'the core foundation for tencent cloud sdk')
+    project.extensions.add('archiveFilePath', 'outputs/aar/smh-android-release.aar')
+} else {
+    project.extensions.add('artifactId', 'smh-android-nobeacon')
+    project.extensions.add('artifactDesc', 'the core foundation for tencent cloud sdk - -no beacon')
+    project.extensions.add('archiveFilePath', 'outputs/aar/smh-android-nobeacon-release.aar')
 }
 
 // assemble 先生成 aar 包
 // publishMavenAarPublicationToMavenLocal 发布到本地
 // publishMavenAarPublicationToMavenRepository 发布到 mavenCentral
 apply from: '../publish.gradle'
+
+//发布本地repo
+apply plugin: 'maven'
+uploadArchives {
+    repositories.mavenDeployer {
+        pom.project {
+            groupId 'com.qcloud.cos'
+            artifactId 'smh-android-nobeacon'
+            version '1.2.33'
+            packaging 'aar'
+        }
+        repository(url: uri("${rootProject.projectDir}/repo"))
+    }
+}
+
+
+
+//static String quotWrapper(key) {
+//    if (key == null) {
+//        return "\"\""
+//    }
+//    return "\"".concat(key).concat("\"")
+//}
+
+//task myTxxest() {
+//    System.out.println("sonatypeUsername " + findProperty("ossrhUsername"))
+//    System.out.println("sonatypePassword " + findProperty("ossrhPassword"))
+//}

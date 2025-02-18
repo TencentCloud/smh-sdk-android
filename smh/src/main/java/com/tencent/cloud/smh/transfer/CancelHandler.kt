@@ -1,6 +1,6 @@
 package com.tencent.cloud.smh.transfer
 
-import com.tencent.cos.xml.CosXmlSimpleService
+import com.tencent.cos.xml.CosXmlBaseService
 import com.tencent.cos.xml.model.CosXmlRequest
 
 /**
@@ -8,7 +8,7 @@ import com.tencent.cos.xml.model.CosXmlRequest
  * Created by rickenwang on 2021/7/19.
  * Copyright 2010-2021 Tencent Cloud. All Rights Reserved.
  */
-class CancelHandler(var cos: CosXmlSimpleService? = null, private val requests: MutableList<CosXmlRequest> = mutableListOf<CosXmlRequest>()) {
+class CancelHandler(var cos: CosXmlBaseService? = null, private val requests: MutableList<CosXmlRequest> = mutableListOf<CosXmlRequest>()) {
 
     @Synchronized fun addRequests(requests: List<CosXmlRequest>) {
         this.requests.addAll(requests)

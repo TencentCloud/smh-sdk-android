@@ -18,6 +18,12 @@ class TransferTaskFuture internal constructor(
         }
     }
 
+    fun resume(): CompletableFuture<Unit> {
+        return call {
+            mTransferTask.resume()
+        }
+    }
+
     private inline fun <T> call(
         crossinline action: suspend () -> T
     ): CompletableFuture<T> {

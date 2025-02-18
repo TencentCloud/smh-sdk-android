@@ -4,8 +4,6 @@ import com.tencent.cloud.smh.BuildConfig
 import com.tencent.cloud.smh.SMHClientException
 import com.tencent.cloud.smh.SMHException
 import com.tencent.cloud.smh.SMHUser
-import com.tencent.cos.xml.exception.CosXmlServiceException
-
 
 /**
  * <p>
@@ -297,7 +295,7 @@ fun extractSMHRequestId(exception: Exception): String? {
 }
 
 fun extractErrorType(exception: Exception): String {
-    return if (exception is SMHException || exception is CosXmlServiceException) {
+    return if (exception is SMHException) {
         ServerError
     } else {
         ClientError

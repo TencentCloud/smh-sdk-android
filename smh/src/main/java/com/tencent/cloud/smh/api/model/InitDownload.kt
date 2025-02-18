@@ -26,5 +26,5 @@ package com.tencent.cloud.smh.api.model
  */
 data class InitDownload(
     @JvmField val url: String?,
-    @JvmField val metaData: Map<String, List<String>>?
+    @JvmField val metaData: Map<String, String>?
 )

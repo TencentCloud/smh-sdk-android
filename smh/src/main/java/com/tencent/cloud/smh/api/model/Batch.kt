@@ -27,6 +27,14 @@ data class BatchResponse(
     @JvmField var result: List<BatchResponseItem>? = null) {
 }
 
+/**
+ * 批量请求结果 result非数组
+ */
+data class BatchResponseSingleResult(
+    @JvmField val taskId: Long? = null,
+    @JvmField val status: Int? = null,
+    @JvmField var result: BatchResponseItem? = null) {
+}
 
 data class BatchResponseItem(
     @JvmField val status: Int,
@@ -41,9 +49,13 @@ data class RestorePath(
     @JvmField val path: List<String>? = null,
 )
 
+/**
+ * 批量删除项
+ * @property permanent 是否永久删除(1为永久删除 0为放入回收站)
+ */
 data class BatchDeleteItem(
     @JvmField val path: String,
-    @JvmField val permanent: Boolean = false
+    @JvmField val permanent: Int = 0
 )
 
 data class BatchSaveToDiskItem(

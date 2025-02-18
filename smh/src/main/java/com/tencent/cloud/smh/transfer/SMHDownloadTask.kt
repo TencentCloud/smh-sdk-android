@@ -2,24 +2,24 @@ package com.tencent.cloud.smh.transfer
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.tencent.cos.xml.utils.FileUtils
 import android.text.TextUtils
 import bolts.CancellationTokenSource
 import com.tencent.cloud.smh.ClientInternalException
 import com.tencent.cloud.smh.ClientManualCancelException
 import com.tencent.cloud.smh.SMHClientException
 import com.tencent.cloud.smh.SMHCollection
+import com.tencent.cloud.smh.X_SMH_META_KEY_PREFIX
 import com.tencent.cloud.smh.api.model.FileInfo
 import com.tencent.cos.xml.listener.CosXmlProgressListener
 import com.tencent.cos.xml.model.CosXmlRequest
-import com.tencent.cos.xml.utils.DigestUtils
-import com.tencent.cos.xml.utils.FileUtils
 import com.tencent.qcloud.core.logger.QCloudLogger
-import okio.Buffer
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileNotFoundException
+import java.util.Locale
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.Exception
@@ -41,6 +41,7 @@ class SMHDownloadTask(
 ) : SMHTransferTask(context, smhCollection, downloadFileRequest) {
 
     private var simpleDownloadTask: IDownloadTask? = null
+    private lateinit var downloadFileResult: DownloadFileResult
     override fun tag(): String {
         return TAG
     }
@@ -58,13 +59,13 @@ class SMHDownloadTask(
         simpleDownloadTask?.cancel()
     }
 
-    suspend fun resume() {
+    override suspend fun resume() {
         if (taskState !== SMHTransferState.PAUSED) {
             QCloudLogger.i(TAG, "[%s]: cannot resume upload task in state %s", taskId, taskState)
             return
         }
         QCloudLogger.i(TAG, "[%s]: resume upload task", taskId, taskState)
-        start()
+        super.resume()
     }
 
     fun cancel() {
@@ -87,18 +88,21 @@ class SMHDownloadTask(
     }
 
 
-    override suspend fun checking() {
+    override fun checking() {
 
     }
 
-    override suspend fun execute(): SMHTransferResult {
-        return if (downloadFileRequest.localFullPath != null) {
+    override suspend fun execute() {
+        downloadFileResult =  if (downloadFileRequest.localFullPath != null) {
             simpleDownload()
         } else {
             downloadToBuffer()
         }
     }
 
+    override suspend fun runAfter(): SMHTransferResult {
+        return downloadFileResult
+    }
 
     // 简单下载
     private suspend fun simpleDownload(): DownloadFileResult {
@@ -149,8 +153,11 @@ class SMHDownloadTask(
             val downloadResult = smhCollection.download(downloadRequest)
             return DownloadFileResult(
                 content = downloadResult.inputStream,
+                bytesTotal = downloadResult.bytesTotal,
                 downloadFileRequest.key,
-                null)
+                null,
+                initDownload.metaData
+            )
         }
 
         override fun cancel() {
@@ -228,7 +235,7 @@ class SMHDownloadTask(
             }
 
             return DownloadFileResult(
-                null, smhKey, crc64ecma
+                null, 0, smhKey, crc64ecma, fileInfo.metaData
             )
         }
 
@@ -369,11 +376,11 @@ class SMHDownloadTask(
                 return
             }
             val localCRC64 = try {
-                DigestUtils.getCRC64(FileInputStream(localFile))
+                com.tencent.cos.xml.utils.DigestUtils.getCRC64(FileInputStream(localFile))
             } catch (e: FileNotFoundException) {
                 throw ClientInternalException("verify CRC64 failed: " + e.message)
             }
-            val remoteCRC64: Long = DigestUtils.getBigIntFromString(remoteCRC)
+            val remoteCRC64: Long = com.tencent.cos.xml.utils.DigestUtils.getBigIntFromString(remoteCRC)
             if (localCRC64 != remoteCRC64) {
                 throw ClientInternalException("verify CRC64 failed, local crc64: $localCRC64, remote crc64: $remoteCRC64")
             }

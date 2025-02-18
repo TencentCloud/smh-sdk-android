@@ -25,6 +25,7 @@ class DownloadResponseConverter<T>(
 
         result.parseResponseBody(response)
         result.inputStream = inputStream
+        result.bytesTotal = inputStreamConverter.bytesTotal
 
         return result as T
     }

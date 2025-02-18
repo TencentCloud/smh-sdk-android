@@ -119,3 +119,67 @@ data class AccessToken(
         )
     }
 }
+
+/**
+ * 查询最近使用的文件列表请求
+ * @property marker 用于顺序列出分页的标识，可选参数，不传默认第一页
+ * @property limit 用于顺序列出分页时本地列出的项目数限制，可选参数，不传则默认20
+ * @property filterActionBy 筛选操作方式，可选，不传返回全部，preview 只返回预览操作，modify 返回编辑操作
+ * @property type 筛选文件类型，可选参数，字符串或字符串数组，当前支持的类型包括：
+ * ■ all: 搜索所有文件，当不传 type 或传空时默认为 all；
+ * ■document: 搜索所有文档，文档类型为：['pdf', 'powerpoint', 'excel', 'word' 'text']
+ * ■pdf: 仅搜索 PDF 文档，对应的文件扩展名为 .pdf；
+ * ■powerpoint: 仅搜索演示文稿，如 .ppt、.pptx、.pot、.potx 等；
+ * ■excel: 仅搜索表格文件，如 .xls、.xlsx、.ett、.xltx、.csv 等；
+ * ■word: 仅搜索文档，如 .doc、.docx、.dot、.wps、.wpt 等；
+ * ■text: 仅搜索纯文本，如 .txt、.asp、.htm 等；
+ * ■doc、xls 或 ppt: 仅搜索 Word、Excel 或 Powerpoint 类型文档，对应的文件扩展名为 .doc(x)、.xls(x) 或 .ppt(x)；
+ * ■字符串数组: 可以是文档后缀数组，如 ['.ppt', '.doc', '.excel']等；也可以是上述筛选类型数组，如 ['pdf', 'powerpoint', 'word'] 等
+ * @property withPath 响应是否带文件路径，默认为 false
+ */
+data class RecentlyUsedFileRequest(
+    val marker: String? = null,
+    val limit: Int? = null,
+    val filterActionBy: String? = null,
+    val type: List<String>? = null,
+    val withPath: Boolean = false,
+    val withFavoriteStatus: Boolean = false,
+)
+
+/**
+ * 查询最近使用的文件列表结果
+ */
+data class RecentlyUsedFileContents(
+    val nextMarker: String?,
+    val contents: List<RecentlyUsedFileItem>
+)
+
+/**
+ * 最近文档项
+ * @property name 文档名称
+ * @property spaceId 文档所在空间
+ * @property inode 文档 ID
+ * @property size 文档大小
+ * @property actionType 操作类型
+ * @property operationTime 操作时间(即访问/编辑的时间)
+ * @property creationTime 文件创建时间
+ * @property crc64 文件的 CRC64-ECMA182 校验值
+ * @param path 文件真实路径。若传入了 withPath:true，则返回该字段
+ */
+data class RecentlyUsedFileItem(
+    val name: String,
+    val spaceId: String,
+    val inode: String,
+    val size: String,
+    val type: MediaType,
+    val fileType: FileType,
+    val previewByDoc: Boolean,
+    val previewByCI: Boolean,
+    val previewAsIcon: Boolean?,
+    val actionType: String,
+    val operationTime: String?,
+    val creationTime: String,
+    val crc64: String,
+    val path: List<String>? = null,
+    val isFavorite: Boolean? = null,
+)

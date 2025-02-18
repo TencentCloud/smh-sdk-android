@@ -16,31 +16,43 @@
  *
  */
 
-package com.tencent.cloud.smh.api.adapter
+package com.tencent.cloud.smh.api.retrofit.call
 
-import com.tencent.cloud.smh.api.*
+import com.tencent.cloud.smh.DATE_KEY
 import com.tencent.cloud.smh.QuotaLimitReachedErrorCode
 import com.tencent.cloud.smh.SMHException
 import com.tencent.cloud.smh.SMHIllegalAccessException
 import com.tencent.cloud.smh.SMHQuotaLimitReachedException
+import com.tencent.cloud.smh.SMHServiceBaseException
+import com.tencent.cloud.smh.api.*
+import com.tencent.cloud.smh.api.retrofit.SMHResponse
+import com.tencent.qcloud.core.http.CallMetricsListener
+import com.tencent.qcloud.core.http.HttpConfiguration
+import com.tencent.qcloud.core.http.HttpConstants
+import com.tencent.qcloud.core.http.QCloudHttpClient
+import com.tencent.qcloud.core.http.interceptor.RetryInterceptor
+import com.tencent.qcloud.core.logger.QCloudLogger
 import okhttp3.Request
 import okhttp3.ResponseBody
-import okio.Timeout
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Converter
 import retrofit2.Response
 import java.io.IOException
+import java.lang.reflect.Field
+import java.util.Date
 
 /**
  * <p>
  * </p>
  */
-class SMHNetworkCall<S: Any>(
+class SMHNetworkCall<S : Any>(
     private val call: Call<S>,
     private val errorConverter: Converter<ResponseBody, SMHException>
-): Call<SMHResponse<S>> {
-
+) : Call<SMHResponse<S>> {
+    val TAG = "SMHNetworkCall"
+    private var eventListenerFiled: Field? = null
+    private var rawCallFiled: Field? = null
     override fun enqueue(callback: Callback<SMHResponse<S>>) {
         return call.enqueue(object : Callback<S> {
             override fun onResponse(call: Call<S>, response: Response<S>) {
@@ -48,9 +60,24 @@ class SMHNetworkCall<S: Any>(
                 val error = response.errorBody()
 
                 if (response.isSuccessful || response.code() == 302) {
+                    // 时间校正
+                    response.headers().get(DATE_KEY)?.apply {
+                        HttpConfiguration.calculateGlobalTimeOffset(
+                            this,
+                            Date(),
+                            600
+                        )
+                    }
+
                     callback.onResponse(
                         this@SMHNetworkCall,
-                        Response.success(SMHResponse.Success(body, response.headers().toMultimap(), response.code()))
+                        Response.success(
+                            SMHResponse.Success(
+                                body,
+                                response.headers().toMultimap(),
+                                response.code()
+                            )
+                        )
                     )
                 } else {
                     val serverException = when {
@@ -79,22 +106,45 @@ class SMHNetworkCall<S: Any>(
                         // 配额错误
                         smhException = SMHQuotaLimitReachedException(smhException)
                     }
+                    smhException.request = call.request()
                     callback.onResponse(
                         this@SMHNetworkCall,
-                        Response.success(SMHResponse.ApiError(smhException, response.headers().toMultimap()))
+                        Response.success(
+                            SMHResponse.ApiError(
+                                smhException,
+                                response.headers().toMultimap(),
+                                response.code()
+                            )
+                        )
                     )
+                    logException(smhException)
                 }
+
+                logCallMetrics()
             }
 
             override fun onFailure(call: Call<S>, throwable: Throwable) {
+                val serviceException = SMHServiceBaseException(throwable)
+                serviceException.request = call.request()
                 val networkResponse = when (throwable) {
-                    is IOException -> SMHResponse.NetworkError(throwable)
-                    else -> SMHResponse.UnknownError(throwable)
+                    is IOException -> {
+                        SMHResponse.NetworkError(serviceException)
+                    }
+                    else -> {
+                        SMHResponse.UnknownError(serviceException)
+                    }
                 }
-
+                logException(serviceException)
                 callback.onResponse(this@SMHNetworkCall, Response.success(networkResponse))
+
+                logCallMetrics()
             }
         })
+    }
+
+    private fun logException(e: SMHServiceBaseException){
+        QCloudLogger.i(TAG, e.request.toString())
+        e.printStackTrace()
     }
 
     override fun isExecuted(): Boolean {
@@ -121,5 +171,36 @@ class SMHNetworkCall<S: Any>(
         return call.request()
     }
 
-
+    /**
+     * 反射获取eventListener 并进行打印
+     */
+    private fun logCallMetrics(){
+        var eventListener: CallMetricsListener? = null
+        var rawCall: okhttp3.Call? = null
+        try {
+            if(rawCallFiled == null) {
+                rawCallFiled = call.javaClass.getDeclaredField("rawCall")
+                rawCallFiled?.apply{
+                    this.isAccessible = true
+                    rawCall = this.get(call) as okhttp3.Call?
+                    rawCall?.apply {
+                        if (eventListenerFiled == null) {
+                            eventListenerFiled = this.javaClass.getDeclaredField("eventListener")
+                            eventListenerFiled?.apply {
+                                this.isAccessible = true
+                                eventListener = this.get(rawCall) as CallMetricsListener
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (ignore: NoSuchFieldException) {
+        } catch (ignore: IllegalAccessException) {
+        } catch (ignore: ClassCastException) {
+        }
+        QCloudLogger.i(
+            QCloudHttpClient.HTTP_LOG_TAG,
+            eventListener?.toString()
+        )
+    }
 }

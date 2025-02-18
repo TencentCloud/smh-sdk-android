@@ -21,13 +21,36 @@ package com.tencent.cloud.smh.api.model
 import com.google.gson.annotations.SerializedName
 
 /**
+ * 快速上传信息
+ *
+ * @property size 文件大小
+ * @property beginningHash 文件头hash
+ * @property fullHash 文件整体hash
+ */
+data class QuickUpload(
+    val size: Long,
+    val beginningHash: String,
+    val fullHash: String? = null,
+)
+
+/**
+ * 分块上传签名PartNumber区域
+ * @property partNumberRange 格式为逗号分隔的 区段，区段 可以是 单个数字 n，也可以是 由两个数字组成的范围 n-m
+ * 举例来说 1,8-10,20 表示包含以下数字的范围：[1, 8, 9, 10, 20]
+ */
+data class PartNumberRange(
+    @JvmField val partNumberRange: String
+)
+
+/**
  * 上传信息
  *
  * @property domain 上传地址域名
  * @property path 上传地址路径
  * @property uploadId 上传 uploadId
  * @property confirmKey 上传确认 key
- * @property headers 上传 headers
+ * @property headers 分块上传header
+ * @property expiration 上传信息有效期，超过有效期后将失效，需要调用分块上传任务续期接口获取新的上传参数
  */
 data class InitUpload(
     @JvmField val domain: String,
@@ -35,6 +58,34 @@ data class InitUpload(
     @JvmField val uploadId: String?,
     @JvmField val confirmKey: String,
     @JvmField val headers: Map<String, String>,
+    @JvmField val expiration: String? = null,
+)
+
+/**
+ * 分块上传信息
+ *
+ * @property domain 上传地址域名
+ * @property path 上传地址路径
+ * @property uploadId 上传 uploadId
+ * @property confirmKey 上传确认 key
+ * @property parts 分块上传 信息
+ * @property expiration 上传信息有效期，超过有效期后将失效，需要调用分块上传任务续期接口获取新的上传参数
+ */
+data class InitMultipartUpload(
+    @JvmField val domain: String,
+    @JvmField val path: String,
+    @JvmField val uploadId: String?,
+    @JvmField val confirmKey: String,
+    @JvmField val parts: Map<String, PartsHeaders>,
+    @JvmField val expiration: String? = null,
+)
+
+/**
+ * 分块上传信息
+ * @property headers 分块上传header
+ */
+data class PartsHeaders(
+    @JvmField val headers: Map<String, String>
 )
 
 /**
@@ -45,10 +96,10 @@ data class InitUpload(
 data class ConfirmUpload(
     @JvmField val path: List<String>,
     @JvmField val name: String,
-    @JvmField val contentType: String?,
-    @JvmField val fileType: FileType?,
-    @JvmField val crc64: String?,
-    @JvmField val size: Long?,
+    @JvmField val contentType: String? = null,
+    @JvmField val fileType: FileType? = null,
+    @JvmField val crc64: String? = null,
+    @JvmField val size: Long? = null,
     @JvmField val type: MediaType? = null,
     @JvmField val previewAsIcon: Boolean? = null,
     @JvmField val previewByCI: Boolean? = null,
@@ -56,7 +107,7 @@ data class ConfirmUpload(
     @JvmField val creationTime: String? = null,
     @JvmField val modificationTime: String? = null,
     @JvmField val eTag: String? = null,
-    @JvmField val metaData: Map<String, String>? = null,
+    @JvmField var metaData: Map<String, String>? = null,
 ) {
     val fileName: String?
         get() = path.lastOrNull()
@@ -74,9 +125,21 @@ data class ConfirmUploadRequestBody(
  *
  * @property path 文件路径
  * @property parts 已上传的分片列表
- * @property uploader 上传信息
  */
 data class MultiUploadMetadata(
+    @JvmField val path: List<String>,
+    @JvmField val parts: List<UploadPart>,
+    @JvmField var confirmKey: String,
+    @JvmField var confirmed: Boolean?,
+)
+
+/**
+ * 公有云分片上传信息
+ *
+ * @property path 文件路径
+ * @property parts 已上传的分片列表
+ */
+data class PublicMultiUploadMetadata(
     @JvmField val path: List<String>,
     @JvmField val parts: List<UploadPart>,
     @SerializedName("uploadPartInfo")

@@ -1,11 +1,17 @@
 package com.tencent.cloud.smh.transfer
 
 import android.net.Uri
-import com.tencent.cloud.smh.api.model.*
-import com.tencent.cos.xml.common.Constants
-import com.tencent.cos.xml.common.Range
-import com.tencent.qcloud.core.common.QCloudProgressListener
-import com.tencent.qcloud.core.http.*
+import com.google.gson.Gson
+import com.tencent.cloud.smh.InvalidArgumentException
+import com.tencent.cloud.smh.PoorNetworkException
+import com.tencent.cloud.smh.api.model.ConfirmUpload
+import com.tencent.cloud.smh.api.model.ConflictStrategy
+import com.tencent.cloud.smh.api.model.FileInfo
+import com.tencent.cloud.smh.api.model.FileType
+import com.tencent.cloud.smh.api.model.MediaType
+import com.tencent.qcloud.core.http.HttpConstants
+import com.tencent.qcloud.core.http.HttpResponse
+import com.tencent.qcloud.core.http.HttpTask
 import java.io.InputStream
 
 /**
@@ -36,10 +42,9 @@ class DownloadRequest(
 }
 
 class DownloadResult(
-
     var inputStream: InputStream? = null,
+    var bytesTotal: Long = 0
 ): SMHResult() {
-
     override fun parseResponseBody(response: HttpResponse<*>) {
         super.parseResponseBody(response)
     }
@@ -76,11 +81,19 @@ open class SMHTransferResult(
 
 class UploadFileRequest(
     key: String,
-    val localUri: Uri,
+    val localUri: Uri? = null,
+    val inputStream: InputStream? = null,
     val conflictStrategy: ConflictStrategy? = null,
-    val confirmKey: String? = null
-
-): SMHTransferRequest(key)
+    val confirmKey: String? = null,
+    val meta: Map<String, String>? = null
+): SMHTransferRequest(key){
+    var initMultipleUploadListener: SMHInitMultipleUploadListener? = null
+    init {
+        if (localUri == null && inputStream == null){
+            throw InvalidArgumentException
+        }
+    }
+}
 
 
 class UploadFileResult(
@@ -97,13 +110,10 @@ class UploadFileResult(
     val modificationTime: String? = null,
     val eTag: String? = null,
     val metaData: Map<String, String>? = null,
+    val isQuick: Boolean = false
 ): SMHTransferResult(key, crc64) {
-
-
     companion object {
-
-        fun fromConfirmUpload(confirmUpload: ConfirmUpload): UploadFileResult {
-
+        fun fromConfirmUpload(confirmUpload: ConfirmUpload, isQuick: Boolean = false): UploadFileResult {
             return UploadFileResult(
                 key = confirmUpload.path.joinToString("/"),
                 crc64 = confirmUpload.crc64,
@@ -117,28 +127,17 @@ class UploadFileResult(
                 creationTime = confirmUpload.creationTime,
                 modificationTime = confirmUpload.modificationTime,
                 eTag = confirmUpload.eTag,
-                metaData = confirmUpload.metaData
+                metaData = confirmUpload.metaData,
+                isQuick = isQuick
             )
         }
 
-        fun fromFileInfo(key: String, fileInfo: FileInfo): UploadFileResult {
-            return UploadFileResult(
-                key = key,
-                crc64 = fileInfo.crc64,
-                contentType = fileInfo.contentType,
-                size = fileInfo.size,
-                type = fileInfo.type,
-                fileType = fileInfo.fileType,
-                previewAsIcon = fileInfo.previewAsIcon,
-                previewByCI = fileInfo.previewByCI,
-                previewByDoc = fileInfo.previewByDoc,
-                creationTime = fileInfo.creationTime,
-                modificationTime = fileInfo.modificationTime,
-                eTag = fileInfo.eTag,
-                metaData = fileInfo.metaData
+        fun fromQuickUpload(confirmUploadRawString: String?): UploadFileResult {
+            return fromConfirmUpload(
+                Gson().fromJson(confirmUploadRawString, ConfirmUpload::class.java),
+                true
             )
         }
-
     }
 }
 
@@ -160,21 +159,50 @@ class DownloadFileRequest(
         }
         httpHeaders[HttpConstants.Header.RANGE] = range.range
     }
-
 }
-
 
 class DownloadFileResult(
     val content: InputStream?,
+    val bytesTotal: Long,
     key: String,
-    crc64: String?
+    crc64: String?,
+    val meta: Map<String, String>?
 ): SMHTransferResult(key, crc64)
 
+/**
+ * 请求头 Range: bytes=x-x
+ * <ul>
+ *     <li>表示头500个字节：bytes=0-499 </li>
+ *     <li>表示第二个500字节：bytes=500-999</li>
+ *     <li>表示500字节以后的范围：bytes=500- </li>
+ *     <li>表示最后500个字节：bytes=-500 :暂不支持</li>
+ * </ul>
+ */
+class Range @JvmOverloads constructor(val start: Long, val end: Long = -1) {
+    val range: String
+        get() = String.format("bytes=%s-%s", start, if (end == -1L) "" else end.toString())
+
+}
+
+/**
+ * 传输状态
+ * @property WAITING 等待中
+ * @property RUN_BEFORE 运行前：目前为计算文件hash, 命中秒传全量计算
+ * @property RUNNING 普通上传中（有进度）
+ * @property PAUSED 暂停
+ * @property RUN_AFTER 运行后：目前为计算crc64用于校验
+ * @property COMPLETE 完成
+ * @property FAILURE 失败
+ */
 enum class SMHTransferState {
 
     WAITING,
 
+    RUN_BEFORE,
+
     RUNNING,
+
+    RUN_AFTER,
 
     PAUSED,
 

@@ -40,6 +40,7 @@ data class DirectoryContents(
     @JvmField val totalNum: Int?,
     @JvmField val localSync: LocalSync?,
     @JvmField val authorityList: MediaAuthority?,
+    @JvmField val authorityButtonList: MediaAuthorityButton?,
     @JvmField val contents: List<MediaContent>,
     @JvmField val eTag: String? = null,
     @JvmField val nextMarker: String? = null,
@@ -159,23 +160,29 @@ enum class ConflictStrategy {
  */
 data class MediaContent(
     @JvmField val name: String,
-    @JvmField val contentType: String?,
-    @JvmField val crc64: String?,
-    @JvmField val size: Long?,
+    @JvmField val contentType: String?= null,
+    @JvmField val crc64: String? = null,
+    @JvmField val size: Long? = null,
     @JvmField val type: MediaType? = null,
     @JvmField val objectKey:String? = null,
     @JvmField val fileType: FileType? = null,
     @JvmField val creationTime: String? = null,
     @JvmField val modificationTime: String? = null,
+    @JvmField val versionId: Long? = null,
     @JvmField val eTag: String? = null,
-    @JvmField val metaData: Map<String, String>?,
+    @JvmField var metaData: Map<String, String>? = null,
+    @JvmField val path: List<String>? = null,
     @JvmField val removedByQuota: Boolean? = null,
     @JvmField val previewByDoc: Boolean? = null,
     @JvmField val previewByCI: Boolean? = null,
     @JvmField val previewAsIcon: Boolean? = null,
     @JvmField val authorityList: MediaAuthority? = null,
+    @JvmField val authorityButtonList: MediaAuthorityButton? = null,
     @JvmField val isExist: Boolean? = null,
     @JvmField val localSync: LocalSync? = null,
+    @JvmField val userId: String? = null,
+    @JvmField val inode: String? = null,
+    @JvmField val isFavorite: Boolean? = null,
 )
 
 /**
@@ -184,9 +191,9 @@ data class MediaContent(
  *
  */
 data class RecycledItem(
-
     @JvmField val recycledItemId: Long,
     @JvmField val name: String,
+    @JvmField val spaceId: String,
     @JvmField val remainingTime: Int,
     @JvmField val removalTime: String?,
     @JvmField val originalPath: List<String>,
@@ -197,6 +204,7 @@ data class RecycledItem(
     @JvmField val creationTime: String? = null,
     @JvmField val modificationTime: String? = null,
     @JvmField val authorityList: RecycledAuthority? = null,
+    @JvmField val authorityButtonList: MediaAuthorityButton? = null,
 )
 
 data class DeleteMediaResult(

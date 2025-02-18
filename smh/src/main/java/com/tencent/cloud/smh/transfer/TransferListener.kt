@@ -2,6 +2,7 @@ package com.tencent.cloud.smh.transfer
 
 import com.tencent.cloud.smh.SMHClientException
 import com.tencent.cloud.smh.SMHException
+import com.tencent.cloud.smh.api.model.InitUpload
 
 /**
  * <p>
@@ -23,4 +24,15 @@ interface SMHResultListener {
     fun onSuccess(request: SMHRequest, result: SMHResult)
 
     fun onFailure(request: SMHRequest, smhException: SMHException?, smhClientException: SMHClientException?)
+}
+
+/**
+ * 初始化分块上传监听接口
+ */
+interface SMHInitMultipleUploadListener {
+    /**
+     * 初始化分块上传成功
+     * @param confirmKey 初始化分块上传confirmKey
+     */
+    fun onSuccess(confirmKey: String)
 }

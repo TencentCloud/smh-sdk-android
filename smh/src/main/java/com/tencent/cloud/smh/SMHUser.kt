@@ -21,8 +21,8 @@ package com.tencent.cloud.smh
 import android.app.Activity
 import com.tencent.cloud.smh.api.SMHResult
 import com.tencent.cloud.smh.api.SMHService
-import com.tencent.cloud.smh.api.adapter.data
 import com.tencent.cloud.smh.api.model.*
+import com.tencent.cloud.smh.api.retrofit.data
 import java.lang.Exception
 
 /**

@@ -16,9 +16,10 @@
  *
  */
 
-package com.tencent.cloud.smh.api.adapter
+package com.tencent.cloud.smh.api.retrofit
 
 import com.tencent.cloud.smh.SMHException
+import com.tencent.cloud.smh.api.retrofit.call.SMHNetworkCall
 import okhttp3.ResponseBody
 import retrofit2.Call
 import retrofit2.CallAdapter
@@ -33,7 +34,6 @@ class CallResultAdapter<S : Any>(
     private val dataType: Type,
     private val errorBodyConverter: Converter<ResponseBody, SMHException>
 ) : CallAdapter<S, Call<SMHResponse<S>>> {
-
     override fun adapt(call: Call<S>): Call<SMHResponse<S>> {
         return SMHNetworkCall(
             call,
@@ -41,8 +41,5 @@ class CallResultAdapter<S : Any>(
         )
     }
 
-    override fun responseType(): Type {
-        return dataType
-    }
-
+    override fun responseType(): Type = dataType
 }

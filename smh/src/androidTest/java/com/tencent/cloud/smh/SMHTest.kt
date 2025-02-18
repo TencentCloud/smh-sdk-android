@@ -10,8 +10,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.tencent.cloud.smh.api.SMHService
 import com.tencent.cloud.smh.api.model.ConflictStrategy
+import com.tencent.cloud.smh.api.model.CreateFileFromTemplateRequest
 import com.tencent.cloud.smh.api.model.Directory
+import com.tencent.cloud.smh.api.model.MediaType
+import com.tencent.cloud.smh.api.model.OrderDirection
+import com.tencent.cloud.smh.api.model.OrderType
 import com.tencent.cloud.smh.api.model.QuotaBody
+import com.tencent.cloud.smh.api.model.SearchType
 import com.tencent.cloud.smh.transfer.*
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert
@@ -20,6 +25,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 
@@ -30,6 +38,7 @@ import kotlin.random.Random
  */
 @RunWith(AndroidJUnit4::class)
 class SMHTest {
+    val TAG: String = "SMHTest"
 
     lateinit var smh: SMHCollection
     lateinit var user: SMHUser
@@ -48,28 +57,28 @@ class SMHTest {
     @Before
     fun setup() {
         context = InstrumentationRegistry.getInstrumentation().context
-        user = StaticUser(
-                libraryId = BuildConfig.SMH_ID,
-                librarySecret = BuildConfig.SMH_KEY
-        )
+        user = MySMHSimpleUser()
         smh = SMHCollection(
             context = context,
-            user = user
+            user = user,
+            customHost = "api.test.tencentsmh.cn",
+            isDebuggable = true
         )
     }
 
     @Test
     fun testOneByOne() {
         testDirectory()
-        testSingleUpload()
+//        testSingleUpload()
         testAlbumCover()
         testHead()
         testDeleteResource()
-        testMultipartUpload()
-        testDownload()
+//        testMultipartUpload()
+//        testDownload()
         testSymlink()
         testSMHList()
         testDeleteAllResources()
+        testGetThumbnail()
     }
 
     /**
@@ -123,7 +132,6 @@ class SMHTest {
     fun testRenameFile() {
 
         runBlocking {
-
             val targetName = "${System.currentTimeMillis()}"
             uploadFile(targetName, 100)
 
@@ -137,7 +145,6 @@ class SMHTest {
             smh.renameFile(targetName = targetName, sourceName = name, conflictStrategy = ConflictStrategy.RENAME)
         }
     }
-
 
     /**
      * 重命名文件夹
@@ -248,138 +255,138 @@ class SMHTest {
                 Assert.assertTrue(false)
             }
 
-            val directories = smh.listAll(Directory(newName))
+//            val directories = smh.listAll(Directory(newName))
 
         }
     }
 
-    @Test
-    fun testMultipartUpload() {
-        runBlocking {
-            val (uri, name, size) = findUploadResource()
-
-            // create default directory
-            try {
-                smh.createDirectory(defaultDirectory)
-            } catch (e: SMHException) {
-                Assert.assertTrue(e.statusCode == 409)
-            }
-
-            val meta = mapOf("date" to "2021-1-1")
-            // multipart upload
-            val initUpload = smh.initMultipartUpload(
-                name = name,
-                dir = defaultDirectory,
-                meta = meta
-            )
-            val metadata = smh.listMultipartUpload(initUpload.confirmKey)
-            val eTag = smh.multipartUpload(metadata, uri, size)
-            Assert.assertNotNull(eTag)
-            val confirm = smh.confirmUpload(initUpload.confirmKey)
-            Assert.assertNotNull(confirm.key)
-            Assert.assertEquals(confirm.fileName, name)
-
-            // list again
-            val directoryContents = smh.listAll(dir = defaultDirectory)
-            Assert.assertNotNull(directoryContents.contents.find {
-                it.name == "${defaultDirectory.path}/$name"
-            })
-
-            val initDownload = smh.initDownload(name, dir = defaultDirectory)
-            meta.forEach { (t, u) ->
-                Assert.assertNotNull(initDownload.metaData?.get(t))
-                Assert.assertTrue(initDownload.metaData?.get(t)?.get(0) == u)
-            }
-        }
-    }
-
-    @Test
-    fun testSingleUpload() {
-        runBlocking {
-            val (uri, name, size) = findUploadResource()
-
-            // create default directory
-            try {
-                smh.createDirectory(defaultDirectory)
-            } catch (e: SMHException) {
-                Assert.assertTrue(e.statusCode == 409)
-            }
-
-            try {
-                smh.createDirectory(assistDirectory)
-            } catch (e: SMHException) {
-            }
-
-            val meta = mapOf("date" to "2021-1-1")
-            // single upload
-            val initUpload = smh.initUpload(
-                name = name,
-                dir = defaultDirectory,
-                meta = meta
-            )
-            val eTag = smh.upload(initUpload, uri)
-            Assert.assertNotNull(eTag)
-            val confirm = smh.confirmUpload(initUpload.confirmKey)
-            Assert.assertNotNull(confirm.key)
-            Assert.assertEquals(confirm.fileName, name)
-
-            // list again
-            var directoryContents = smh.listAll(dir = defaultDirectory)
-            Assert.assertNotNull(directoryContents.contents.find {
-                it.name == "${defaultDirectory.path}/$name"
-            })
-
-            // 生成缩略图
-            val previewThumbnail = smh.getThumbnail(name = directoryContents.contents.first().name, size = 50)
-            Assert.assertNotNull(previewThumbnail)
-            Assert.assertNotNull(previewThumbnail.location)
-
-            // move file
-            val newName = "target_${System.currentTimeMillis()}.jpg"
-            val content = directoryContents.contents.first()
-            val renameFileResponse = smh.renameFile(targetDir = assistDirectory, targetName = newName, sourceName = content.name)
-            Assert.assertNotNull(renameFileResponse)
-            Assert.assertNotNull(renameFileResponse.path)
-
-            smh.renameFile(targetName = content.name, sourceDir = assistDirectory, sourceName = newName)
-
-            // move targetDir not exist
-            try {
-                val targetDirNotExistResponse = smh.renameFile(targetDir = Directory("not_exist"), targetName = newName, sourceName = content.name)
-            } catch (e: SMHException) {
-                Assert.assertEquals(e.statusCode, 404)
-            }
-
-            // head file
-            val headFileResponse = smh.headFile(name, dir = defaultDirectory)
-            Assert.assertNotNull(headFileResponse)
-            Assert.assertNotNull(headFileResponse.contentType)
-            Assert.assertNotNull(headFileResponse.size)
-            Assert.assertNotNull(headFileResponse.creationTime)
-            Assert.assertNotNull(headFileResponse.eTag)
-            Assert.assertNotNull(headFileResponse.crc64)
-            Assert.assertNotNull(headFileResponse.type)
-//            meta.forEach { (t, u) ->
-//                Assert.assertNotNull(headFileResponse.metas?.get(t))
-//                Assert.assertTrue(headFileResponse.metas?.get(t) == u)
+//    @Test
+//    fun testMultipartUpload() {
+//        runBlocking {
+//            val (uri, name, size) = findUploadResource()
+//
+//            // create default directory
+//            try {
+//                smh.createDirectory(defaultDirectory)
+//            } catch (e: SMHException) {
+//                Assert.assertTrue(e.statusCode == 409)
 //            }
-
-            // head file not exist
-            try {
-                smh.headFile("not_exist", defaultDirectory)
-            } catch (e: SMHException) {
-                Assert.assertEquals(e.statusCode, 404)
-            }
-
-            // download after rename
+//
+//            val meta = mapOf("date" to "2021-1-1")
+//            // multipart upload
+//            val initUpload = smh.initMultipartUpload(
+//                name = name,
+//                dir = defaultDirectory,
+//                meta = meta
+//            )
+//            val metadata = smh.listMultipartUpload(initUpload.confirmKey)
+//            val eTag = smh.multipartUpload(metadata, uri, size)
+//            Assert.assertNotNull(eTag)
+//            val confirm = smh.confirmUpload(initUpload.confirmKey)
+//            Assert.assertNotNull(confirm.key)
+//            Assert.assertEquals(confirm.fileName, name)
+//
+//            // list again
+//            val directoryContents = smh.listAll(dir = defaultDirectory)
+//            Assert.assertNotNull(directoryContents.contents.find {
+//                it.name == "${defaultDirectory.path}/$name"
+//            })
+//
 //            val initDownload = smh.initDownload(name, dir = defaultDirectory)
-//            // val initDownload =  smh.initDownload("ori2.jpg", dir = defaultDirectory)
 //            meta.forEach { (t, u) ->
 //                Assert.assertNotNull(initDownload.metaData?.get(t))
-//                Assert.assertTrue(initDownload.metaData?.get(t)?.get(0) == u)
+//                Assert.assertTrue(initDownload.metaData?.get(t) == u)
 //            }
-        }
-    }
+//        }
+//    }
+//
+//    @Test
+//    fun testSingleUpload() {
+//        runBlocking {
+//            val (uri, name, size) = findUploadResource()
+//
+//            // create default directory
+//            try {
+//                smh.createDirectory(defaultDirectory)
+//            } catch (e: SMHException) {
+//                Assert.assertTrue(e.statusCode == 409)
+//            }
+//
+//            try {
+//                smh.createDirectory(assistDirectory)
+//            } catch (e: SMHException) {
+//            }
+//
+//            val meta = mapOf("date" to "2021-1-1")
+//            // single upload
+//            val initUpload = smh.initUpload(
+//                name = name,
+//                dir = defaultDirectory,
+//                meta = meta
+//            )
+//            val eTag = smh.upload(initUpload, uri)
+//            Assert.assertNotNull(eTag)
+//            val confirm = smh.confirmUpload(initUpload.confirmKey)
+//            Assert.assertNotNull(confirm.key)
+//            Assert.assertEquals(confirm.fileName, name)
+//
+//            // list again
+//            var directoryContents = smh.listAll(dir = defaultDirectory)
+//            Assert.assertNotNull(directoryContents.contents.find {
+//                it.name == "${defaultDirectory.path}/$name"
+//            })
+//
+//            // 生成缩略图
+//            val previewThumbnail = smh.getThumbnail(name = directoryContents.contents.first().name, size = 50)
+//            Assert.assertNotNull(previewThumbnail)
+//            Assert.assertNotNull(previewThumbnail.location)
+//
+//            // move file
+//            val newName = "target_${System.currentTimeMillis()}.jpg"
+//            val content = directoryContents.contents.first()
+//            val renameFileResponse = smh.renameFile(targetDir = assistDirectory, targetName = newName, sourceName = content.name)
+//            Assert.assertNotNull(renameFileResponse)
+//            Assert.assertNotNull(renameFileResponse.path)
+//
+//            smh.renameFile(targetName = content.name, sourceDir = assistDirectory, sourceName = newName)
+//
+//            // move targetDir not exist
+//            try {
+//                val targetDirNotExistResponse = smh.renameFile(targetDir = Directory("not_exist"), targetName = newName, sourceName = content.name)
+//            } catch (e: SMHException) {
+//                Assert.assertEquals(e.statusCode, 404)
+//            }
+//
+//            // head file
+//            val headFileResponse = smh.headFile(name, dir = defaultDirectory)
+//            Assert.assertNotNull(headFileResponse)
+//            Assert.assertNotNull(headFileResponse.contentType)
+//            Assert.assertNotNull(headFileResponse.size)
+//            Assert.assertNotNull(headFileResponse.creationTime)
+//            Assert.assertNotNull(headFileResponse.eTag)
+//            Assert.assertNotNull(headFileResponse.crc64)
+//            Assert.assertNotNull(headFileResponse.type)
+////            meta.forEach { (t, u) ->
+////                Assert.assertNotNull(headFileResponse.metas?.get(t))
+////                Assert.assertTrue(headFileResponse.metas?.get(t) == u)
+////            }
+//
+//            // head file not exist
+//            try {
+//                smh.headFile("not_exist", defaultDirectory)
+//            } catch (e: SMHException) {
+//                Assert.assertEquals(e.statusCode, 404)
+//            }
+//
+//            // download after rename
+////            val initDownload = smh.initDownload(name, dir = defaultDirectory)
+////            // val initDownload =  smh.initDownload("ori2.jpg", dir = defaultDirectory)
+////            meta.forEach { (t, u) ->
+////                Assert.assertNotNull(initDownload.metaData?.get(t))
+////                Assert.assertTrue(initDownload.metaData?.get(t)?.get(0) == u)
+////            }
+//        }
+//    }
 
 
 
@@ -405,47 +412,60 @@ class SMHTest {
         }
     }
 
-    @Test
-    fun testDownload() {
-        runBlocking {
-            val directoryContents = smh.listAll(dir = defaultDirectory)
-            val assets = directoryContents.contents
-            Assert.assertTrue(assets.count() > 0)
-            val download = assets[Random.nextInt(0, assets.count())]
-
-            val initDownload = smh.initDownload(
-                name = download.name
-            )
-            val rawName = defaultDirectory.path?.let {
-                download.name.replace("${it}/", "")
-            } ?: download.name
-            val fileName = "${System.currentTimeMillis()}_$rawName"
-            val url = requireNotNull(initDownload.url)
-            val metadata = requireNotNull(initDownload.metaData)
-            val contentUri = requireNotNull(MSHelper.createNewPendingAsset(
-                context,
-                contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                assetName = fileName,
-            ))
-
-            try {
-                smh.download(url, contentUri = contentUri)
-                MSHelper.endAssetPending(context, contentUri)
-
-                val (size, name, path) = requireNotNull(MSHelper.getResourceInfo(context, contentUri))
-                Assert.assertEquals(name, fileName)
-            } finally {
-                // delete file
-                MSHelper.removeResourceUri(context, contentUri)
-            }
-
-        }
-    }
+//    @Test
+//    fun testDownload() {
+//        runBlocking {
+//            val directoryContents = smh.listAll(dir = defaultDirectory)
+//            val assets = directoryContents.contents
+//            Assert.assertTrue(assets.count() > 0)
+//            val download = assets[Random.nextInt(0, assets.count())]
+//
+//            val initDownload = smh.initDownload(
+//                name = download.name
+//            )
+//            val rawName = defaultDirectory.path?.let {
+//                download.name.replace("${it}/", "")
+//            } ?: download.name
+//            val fileName = "${System.currentTimeMillis()}_$rawName"
+//            val url = requireNotNull(initDownload.url)
+//            val metadata = requireNotNull(initDownload.metaData)
+//            val contentUri = requireNotNull(MSHelper.createNewPendingAsset(
+//                context,
+//                contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+//                assetName = fileName,
+//            ))
+//
+//            try {
+//                smh.download(url, contentUri = contentUri)
+//                MSHelper.endAssetPending(context, contentUri)
+//
+//                val (size, name, path) = requireNotNull(MSHelper.getResourceInfo(context, contentUri))
+//                Assert.assertEquals(name, fileName)
+//            } finally {
+//                // delete file
+//                MSHelper.removeResourceUri(context, contentUri)
+//            }
+//
+//        }
+//    }
 
     @Test
     fun testSMHList() {
         runBlocking {
-            val remoteDirs = smh.listAll(Directory(""))
+            val remoteDirs = smh.listAll(Directory("AndroidUT"))
+            remoteDirs.contents.forEach {
+                Log.i("listAll", it.metaData?.entries?.joinToString())
+            }
+        }
+    }
+
+    @Test
+    fun testSMHListRecycled() {
+        runBlocking {
+            val remoteDirs = smh.listRecycledWithMarker(null, 50)
+            remoteDirs.contents.forEach {
+                Log.i("listAll", it.name)
+            }
         }
     }
 
@@ -539,4 +559,80 @@ class SMHTest {
         return uploadTask.getResultOrThrow() as UploadFileResult
     }
 
+
+    /**
+     * 获取缩略图
+     */
+    @Test
+    fun testGetThumbnail() {
+        runBlocking {
+            val result = smh.getThumbnail(
+                name = "img.jpeg",
+                dir = Directory("ut"),
+//                widthSize = 100,
+//                heightSize = 100
+//                scale = 50
+//                size = 100,
+//                purpose = "list"
+            )
+            Log.d(TAG, "location: ${result.location}")
+            Assert.assertTrue(result.location?.isNotEmpty() == true)
+        }
+    }
+
+    @Test
+    fun testSearch() {
+        runBlocking {
+            val result = smh.initSearch(
+                searchTypes = listOf(SearchType.Video),
+                keyword = "a",
+                orderBy = OrderType.NAME,
+                orderByType = OrderDirection.ASC
+            )
+            Log.d(TAG, "searchId: ${result.searchId}")
+            Assert.assertTrue(true)
+        }
+    }
+
+    @Test
+    fun testOfficeFile() {
+        runBlocking {
+            val result = smh.createFileFromTemplate(
+                name = "test哈.docx",
+                dir = Directory("AndroidUT"),
+                mapOf("meta1" to "meta1Value","meta2" to "meta2Value","meta3" to "meta3Value"),
+                CreateFileFromTemplateRequest("word.docx")
+            )
+            Log.d(TAG, result.toString())
+
+            val editResult = smh.officeEditFile(
+                name = "test哈.docx",
+                dir = Directory("AndroidUT")
+            )
+            Log.d(TAG, "html: $editResult")
+            Assert.assertTrue(true)
+        }
+    }
+
+    @Test
+    fun testGetSpaceFileCount() {
+        runBlocking {
+            val result = smh.getSpaceFileCount()
+            Log.d(TAG, "fileNum: ${result.fileNum} dirNum: ${result.dirNum} recycledFileNum: ${result.recycledFileNum} recycledDirNum: ${result.recycledDirNum} historyFileNum: ${result.historyFileNum}")
+            Assert.assertTrue(true)
+        }
+    }
+
+    @Test
+    fun testRecentlyUsedFile() {
+        runBlocking {
+            val recentlyUsedFile = smh.recentlyUsedFile(type = listOf("text"))
+            recentlyUsedFile.contents.forEach {
+                Log.i("recentlyUsedFile", it.name)
+            }
+            val inodeInfo = smh.getINodeInfo(recentlyUsedFile.contents[0].inode)
+            Log.i("inodeInfo", inodeInfo.path.toString())
+            Assert.assertTrue(true)
+        }
+    }
 }

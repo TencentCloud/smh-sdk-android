@@ -27,3 +27,4 @@ const val X_SMH_CRC64_KEY = "x-smh-crc64"
 const val X_SMH_META_KEY_PREFIX = "x-smh-meta-"
 
 const val LOCATION_KEY = "Location"
+const val DATE_KEY = "date"

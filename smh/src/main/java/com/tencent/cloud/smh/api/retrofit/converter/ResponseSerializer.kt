@@ -16,7 +16,7 @@
  *
  */
 
-package com.tencent.cloud.smh.api.adapter
+package com.tencent.cloud.smh.api.retrofit.converter
 
 /**
  * <p>

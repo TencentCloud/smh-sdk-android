@@ -1,10 +1,2 @@
-rootProject.name = "smh-sdk-android"
-
-include ":xmlCompiler"
-include ":smh-sdk-android"
-include ":cos-android"
-include ":xmlAnnoation"
-include ":cos-android-ktx"
-include ":foundation"
 include ":smh"
 

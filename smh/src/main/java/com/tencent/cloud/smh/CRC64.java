@@ -88,7 +88,7 @@ public class CRC64 implements Checksum {
     /**
      * Initialize with a custom CRC value.
      *
-     * @param value
+     * @param value value
      */
     public CRC64(long value) {
         this.value = value;
@@ -124,6 +124,8 @@ public class CRC64 implements Checksum {
 
     /**
      * Construct new CRC64 instance from byte array.
+     * @param b b
+     * @return CRC64
      */
     public static CRC64 fromBytes(byte[] b) {
         long l = 0;
@@ -137,7 +139,7 @@ public class CRC64 implements Checksum {
     /**
      * Calculate the CRC64 of the given file's content.
      *
-     * @param f
+     * @param f f
      * @return new {@link CRC64} instance initialized to the file's CRC value
      * @throws IOException
      *             in case the {@link FileInputStream#read(byte[])} method fails
@@ -175,6 +177,7 @@ public class CRC64 implements Checksum {
 
     /**
      * Get 8 byte representation of current CRC64 value.
+     * @return byte[]
      */
     public byte[] getBytes() {
         byte[] b = new byte[8];
@@ -193,6 +196,8 @@ public class CRC64 implements Checksum {
 
     /**
      * Update CRC64 with new byte block.
+     * @param b b
+     * @param len len
      */
     public void update(byte[] b, int len) {
         this.update(b, 0, len);
@@ -200,6 +205,9 @@ public class CRC64 implements Checksum {
 
     /**
      * Update CRC64 with new byte block.
+     * @param b b
+     * @param off off
+     * @param len len
      */
     public void update(byte[] b, int off, int len) {
         this.value = ~this.value;

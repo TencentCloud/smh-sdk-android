@@ -1,7 +1,10 @@
 package com.tencent.cloud.smh.api.model
 
 import com.tencent.cloud.smh.*
+import com.tencent.cloud.smh.api.retrofit.headers
+import com.tencent.cloud.smh.utils.Utils
 import okhttp3.Headers
+import java.util.Locale
 
 /**
  * <p>
@@ -17,7 +20,6 @@ data class HeadFileContent(
     val crc64: String?,
     val metas: Map<String, String>?
 ) {
-
     constructor(
         headers: Map<String, List<String>>
     ) : this(
@@ -27,10 +29,6 @@ data class HeadFileContent(
         headers.getOrElse(X_SMH_ETAG_KEY, { null })?.first(),
         headers.getOrElse(X_SMH_SIZE_KEY, { null })?.first()?.toLong(),
         headers.getOrElse(X_SMH_CRC64_KEY, { null })?.first(),
-        headers.filter {
-            it.key.startsWith(X_SMH_META_KEY_PREFIX)
-        }.mapValues {
-            it.value.first()
-        }
+        Utils.metaDataTrimByHeaders(headers)
     )
 }

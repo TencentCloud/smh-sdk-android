@@ -42,5 +42,5 @@ val smhHugeMediaKey = "smhHugeMediaKey.txt"
 val smhDirectoryName = "smhDirectory"
 
 val smhSmallMediaSize = 100L
-val smhBigMediaSize = 1024 * 1024 * 20L
-val smhHugeMediaSize = 1024 * 1024 * 100L
+val smhBigMediaSize = 1024 * 1024 *20L + 100
+val smhHugeMediaSize = 1024 * 1024 * 1000L + 100

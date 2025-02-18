@@ -35,7 +35,7 @@ data class FileInfo(
     @JvmField val size: Long?,
     @JvmField val eTag: String?,
     @JvmField val crc64: String?,
-    @JvmField val metaData: Map<String, String>,
+    @JvmField var metaData: Map<String, String>,
     @JvmField val previewAsIcon: Boolean?,
     @JvmField val previewByCI: Boolean,
     @JvmField val previewByDoc: Boolean,
@@ -59,7 +59,40 @@ data class DirectoryInfo(
     @JvmField val crc64: String?,
     @JvmField val versionId: String?,
     @JvmField val historySize: Long?,
-    @JvmField val metaData: Map<String, String>,
+    @JvmField var metaData: Map<String, String>,
+    @JvmField val previewAsIcon: Boolean?,
+    @JvmField val previewByCI: Boolean?,
+    @JvmField val previewByDoc: Boolean,
     @JvmField val localSync: LocalSync?,
-) {
+    @JvmField val authorityList: MediaAuthority?,
+    @JvmField val authorityButtonList: MediaAuthorityButton?,
+    @JvmField val isAuthorized: Boolean?,
+    @JvmField val tagList: List<FileTag>?,
+){
+    data class FileTag(
+        val id: Int,
+        val tagName: String,
+        val tagType: Int
+    )
 }
+
+/**
+ * inode查询path实体
+ * @property name 名称
+ * @property path 路径 folderA/1.jpg
+ * @property type 类型 file 或 dir
+ * @property creationTime 创建时间
+ * @property modificationTime 修改时间
+ * @property size 大小
+ * @property crc64 文件的 CRC64-ECMA182 校验值
+ */
+data class INodeInfo(
+    val name: String,
+    val path: List<String>,
+    val type: String,
+    val creationTime: String,
+    val modificationTime: String? = null,
+    val size: String? = null,
+    val crc64: String? = null,
+    val contentType: String? = null
+)

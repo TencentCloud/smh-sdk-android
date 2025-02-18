@@ -19,6 +19,7 @@
 package com.tencent.cloud.smh
 
 import com.google.gson.annotations.SerializedName
+import okhttp3.Request
 import java.math.BigDecimal
 
 /**
@@ -50,7 +51,7 @@ open class SMHException(
     message: String = "",
 
     @JvmField val headers: Map<String, List<String>> = emptyMap(),
-): Exception(message)
+): SMHServiceBaseException(message)
 
 class SMHIllegalAccessException(e: SMHException): SMHException(
     errorCode = e.errorCode,
@@ -77,3 +78,16 @@ class SMHQuotaInsufficientException(val remainSize: BigDecimal?): SMHException(
 val SMHNoUserException = SMHIllegalAccessException("NoUser")
 
 internal const val QuotaLimitReachedErrorCode = "QuotaLimitReached"
+
+/**
+ * smh服务端异常基类
+ * @property request 请求
+ */
+open class SMHServiceBaseException: Exception {
+    constructor() : super()
+    constructor(message: String?) : super(message)
+    constructor(message: String?, cause: Throwable?) : super(message, cause)
+    constructor(cause: Throwable?) : super(cause)
+
+    @JvmField var request: Request? = null
+}

@@ -27,7 +27,8 @@ data class HistoryMedia(
     val crc64: String?,
     val creationTime: String,
     val authorityList: MediaAuthority,
-)
+    val authorityButtonList: MediaAuthorityButton?
+    )
 
 data class HistoryStatus(
     val enableFileHistory: Boolean,

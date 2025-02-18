@@ -1,4 +1,4 @@
-package com.tencent.cloud.smh.api.adapter
+package com.tencent.cloud.smh.api.retrofit.converter
 
 import com.google.gson.Gson
 import com.google.gson.TypeAdapter

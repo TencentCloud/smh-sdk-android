@@ -16,11 +16,10 @@
  *
  */
 
-package com.tencent.cloud.smh.api.adapter
+package com.tencent.cloud.smh.api.retrofit
 
-import com.tencent.cloud.smh.PoorNetworkException
 import com.tencent.cloud.smh.SMHException
-import java.io.IOException
+import com.tencent.cloud.smh.SMHServiceBaseException
 
 /**
  * <p>
@@ -28,13 +27,15 @@ import java.io.IOException
  */
 sealed class SMHResponse<out T> {
 
-    data class Success<out T>(val result: T?, val headers: Map<String, List<String>>, val code: Int): SMHResponse<T>()
+    data class Success<out T>(val result: T?, val headers: Map<String, List<String>>, val code: Int) : SMHResponse<T>()
 
-    data class ApiError(val err: SMHException, val headers: Map<String, List<String>>): SMHResponse<Nothing>()
+    data class ApiError(val err: SMHException,
+                        val headers: Map<String, List<String>>,
+                        val code: Int): SMHResponse<Nothing>()
 
-    data class NetworkError(val err: IOException): SMHResponse<Nothing>()
+    data class NetworkError(val err: SMHServiceBaseException): SMHResponse<Nothing>()
 
-    data class UnknownError(val err: Throwable): SMHResponse<Nothing>()
+    data class UnknownError(val err: SMHServiceBaseException): SMHResponse<Nothing>()
 }
 
 val <T> SMHResponse<T>.isSuccess: Boolean
@@ -43,6 +44,13 @@ val <T> SMHResponse<T>.isSuccess: Boolean
 
 val <T> SMHResponse<T>.dataOrNull: T?
     get() = (this as? SMHResponse.Success)?.data
+
+fun <T> SMHResponse<T>.code(): Int  = when (this) {
+    is SMHResponse.Success -> this.code
+    is SMHResponse.ApiError -> this.code
+    is SMHResponse.NetworkError -> throw this.err
+    is SMHResponse.UnknownError -> throw this.err
+}
 
 fun <T> SMHResponse<T>.header(key: String): String?  = when (this) {
         is SMHResponse.Success -> this.headers[key]?.firstOrNull()
@@ -70,7 +78,7 @@ val <T> SMHResponse<T>.data: T
     get() = when (this) {
         is SMHResponse.Success -> this.result ?: throw IllegalAccessException("data is null")
         is SMHResponse.ApiError -> throw this.err
-        is SMHResponse.NetworkError -> throw PoorNetworkException
+        is SMHResponse.NetworkError -> throw this.err
         is SMHResponse.UnknownError -> throw this.err
     }
 
@@ -78,7 +86,7 @@ val <T> SMHResponse<T>.checkSuccess: T?
     get() = when (this) {
         is SMHResponse.Success -> this.result
         is SMHResponse.ApiError -> throw this.err
-        is SMHResponse.NetworkError -> throw PoorNetworkException
+        is SMHResponse.NetworkError -> throw this.err
         is SMHResponse.UnknownError -> throw this.err
     }
 

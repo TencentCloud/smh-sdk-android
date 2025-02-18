@@ -16,7 +16,7 @@
  *
  */
 
-package com.tencent.cloud.smh.api.adapter
+package com.tencent.cloud.smh.api.retrofit
 
 import com.tencent.cloud.smh.SMHException
 import retrofit2.Call
@@ -29,7 +29,7 @@ import java.lang.reflect.Type
  * <p>
  * </p>
  */
-class CallResultAdapterFactory: CallAdapter.Factory() {
+class CallResultAdapterFactory : CallAdapter.Factory() {
     override fun get(
         returnType: Type,
         annotations: Array<Annotation>,
