@@ -35,3 +35,9 @@ enum class Purpose(var value: String) {
 
     override fun toString(): String = value
 }
+
+/**
+ * 设置租户空间限速
+ * @property downloadTrafficLimit 空间下载限速，数字类型，必选参数，范围 100KB/s - 100MB/s ，单位Byte，当输入-1时表示取消限速；
+ */
+data class SpaceTrafficLimit(@JvmField val downloadTrafficLimit: Long)

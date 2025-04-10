@@ -41,6 +41,7 @@ class SMHDownloadTask(
 ) : SMHTransferTask(context, smhCollection, downloadFileRequest) {
 
     private var simpleDownloadTask: IDownloadTask? = null
+    private var downloadToBufferTask: IDownloadTask? = null
     private lateinit var downloadFileResult: DownloadFileResult
     override fun tag(): String {
         return TAG
@@ -57,6 +58,7 @@ class SMHDownloadTask(
         onTransferPaused()
         cts.cancel()
         simpleDownloadTask?.cancel()
+        downloadToBufferTask?.cancel()
     }
 
     override suspend fun resume() {
@@ -73,10 +75,13 @@ class SMHDownloadTask(
         isManualCanceled = true
         cts.cancel()
         simpleDownloadTask?.cancel()
+        downloadToBufferTask?.cancel()
         // 清空下载记录
         clearHasTransferPart()
         // 删除本地文件
-        FileUtils.deleteFileIfExist(downloadFileRequest.localFullPath)
+        if(!TextUtils.isEmpty(downloadFileRequest.localFullPath)){
+            FileUtils.deleteFileIfExist(downloadFileRequest.localFullPath)
+        }
     }
 
     /**
@@ -106,7 +111,12 @@ class SMHDownloadTask(
 
     // 简单下载
     private suspend fun simpleDownload(): DownloadFileResult {
-        val downloadTask = SimpleDownloadTask(context, transferApiProxy, downloadFileRequest, cts, verifyContent,
+        val downloadTask = SimpleDownloadTask(
+            context = context,
+            transferApiProxy = transferApiProxy,
+            downloadFileRequest = downloadFileRequest,
+            cts = cts,
+            verifyContent = verifyContent,
             mExecutor = mExecutor)
         downloadTask.setTaskId(taskId)
         downloadTask.smhKey = smhKey
@@ -118,10 +128,12 @@ class SMHDownloadTask(
     }
 
     private suspend fun downloadToBuffer(): DownloadFileResult {
-
-        val downloadToBufferTask = DownloadToBufferTask(context, downloadFileRequest,
-            smhCollection, cts)
-        return downloadToBufferTask.execute()
+        val downloadTask = DownloadToBufferTask(
+            downloadFileRequest = downloadFileRequest,
+            smhCollection = smhCollection,
+            cts = cts)
+        downloadToBufferTask = downloadTask
+        return downloadTask.execute()
     }
 
     interface IDownloadTask {
@@ -132,10 +144,9 @@ class SMHDownloadTask(
     }
 
     private class DownloadToBufferTask(
-        val context: Context,
-        val downloadFileRequest: DownloadFileRequest,
-        val smhCollection: SMHCollection,
-        val cts: CancellationTokenSource
+        private val downloadFileRequest: DownloadFileRequest,
+        private val smhCollection: SMHCollection,
+        private val cts: CancellationTokenSource
     ): IDownloadTask {
 
         private var mDownloadRequest: DownloadRequest? = null
@@ -176,13 +187,13 @@ class SMHDownloadTask(
     }
 
     private class SimpleDownloadTask(
-        val context: Context,
-        val transferApiProxy: TransferApiProxy,
-        val downloadFileRequest: DownloadFileRequest,
-        val cts: CancellationTokenSource,
-        val verifyContent: Boolean,
-        val mClearDownloadPart: Boolean = false,
-        val mExecutor: Executor? = null,
+        private val context: Context,
+        private val transferApiProxy: TransferApiProxy,
+        private val downloadFileRequest: DownloadFileRequest,
+        private val cts: CancellationTokenSource,
+        private val verifyContent: Boolean,
+        private val mClearDownloadPart: Boolean = false,
+        private val mExecutor: Executor? = null,
     ): IDownloadTask {
         lateinit var smhKey: String
         var historyId: Long? = null
@@ -276,29 +287,19 @@ class SMHDownloadTask(
         // 1. 先根据 key 找到 DownloadRecord
         // 2. 校验 DownloadRecord 的有效性
         private fun hasDownloadPart(): Boolean {
-
-            return try {
+            var hasDownloadPart = false
+            try {
                 val downloadRecord = getDownloadRecord()?: return false
                 QCloudLogger.i(TAG, "[%s]: find DownloadRecord: %s", taskId, downloadRecord)
                 if (downloadRecord.creationTime == null || downloadRecord.creationTime != creationTime ||
                     downloadRecord.eTag == null || downloadRecord.eTag != eTag ||
                     downloadRecord.crc64ecma != null && crc64ecma != null && downloadRecord.crc64ecma != crc64ecma) {
-                    QCloudLogger.w(
-                        TAG,
-                        "[%s]: verify DownloadRecord failed: lastModified:%s, eTag:%s, crc64ecma:%s",
-                        taskId,
-                        creationTime,
-                        eTag,
-                        crc64ecma,
-                    )
-                    false
+                    QCloudLogger.w(TAG, "[%s]: verify DownloadRecord failed: lastModified:%s, eTag:%s, crc64ecma:%s", taskId, creationTime, eTag, crc64ecma,)
                 } else {
-                    true
+                    hasDownloadPart = true
                 }
-            } catch (e: JSONException) {
-                QCloudLogger.i(TAG, "[%s]: parse DownloadRecord failed: %s", taskId, e.message)
-                false
-            }
+            } catch (e: JSONException) { QCloudLogger.i(TAG, "[%s]: parse DownloadRecord failed: %s", taskId, e.message) }
+            return hasDownloadPart
         }
 
         // 1. 根据 DownloadRecord 清理本地环境
@@ -372,9 +373,7 @@ class SMHDownloadTask(
             remoteCRC: String?,
             localFile: File
         ) {
-            if (TextUtils.isEmpty(remoteCRC)) {
-                return
-            }
+            if (TextUtils.isEmpty(remoteCRC)) { return }
             val localCRC64 = try {
                 com.tencent.cos.xml.utils.DigestUtils.getCRC64(FileInputStream(localFile))
             } catch (e: FileNotFoundException) {
@@ -429,9 +428,7 @@ class SMHDownloadTask(
                 downloadRecordStr?.let {
                     DownloadRecord.toJson(downloadRecordStr)
                 }
-            } catch (exception: Exception) {
-                null
-            }
+            } catch (exception: Exception) { null }
 
         }
 
@@ -442,9 +439,7 @@ class SMHDownloadTask(
                         downloadRecord
                     )
                 ).apply()
-            } catch (e: JSONException) {
-                e.printStackTrace()
-            }
+            } catch (e: JSONException) { e.printStackTrace() }
         }
 
         private fun getSPKey(downloadFileRequest: DownloadFileRequest) =

@@ -7,7 +7,7 @@ package com.tencent.cloud.smh.api.model
  */
 
 data class HistoryMediaContent(
-    val totalNum: Int,
+    val totalNum: Int? = null,
     val contents: List<HistoryMedia>,
     val eTag: String? = null,
     val nextMarker: String? = null,
@@ -15,23 +15,23 @@ data class HistoryMediaContent(
 
 data class HistoryMedia(
     val id: Long,
-    val createdBy: Long,
-    val creationWay: Int,
-    val createdUserId: String,
-    val createdUserNickname: String,
+    val createdBy: String?,
+    val creationWay: Int?,
+    val createdUserId: String?,
+    val createdUserNickname: String?,
     var createdUserAvatar: String?,
-    val version: Long,
-    val isLatestVersion: Boolean,
+    val version: Long?,
+    val isLatestVersion: Boolean?,
     val name: String,
-    val size: Long,
+    val size: Long?,
     val crc64: String?,
-    val creationTime: String,
-    val authorityList: MediaAuthority,
+    val creationTime: String?,
+    val authorityList: MediaAuthority?,
     val authorityButtonList: MediaAuthorityButton?
     )
 
 data class HistoryStatus(
-    val enableFileHistory: Boolean,
-    val fileHistoryCount: Long,
-    val fileHistoryExpireDay: Int,
+    val enableFileHistory: Boolean?,
+    val fileHistoryCount: Long?,
+    val fileHistoryExpireDay: Int?,
 )

@@ -22,6 +22,10 @@ import com.google.gson.annotations.SerializedName
 import okhttp3.Request
 import java.math.BigDecimal
 
+//SMHException： 服务端异常
+//SMHServiceBaseException：网络异常（例如超时、ssl连接错误等）
+//SMHClientException：客户端异常（其中code为PoorNetwork时为cos交互时的网络问题）
+
 /**
  * SMH 异常
  *
@@ -57,6 +61,8 @@ class SMHIllegalAccessException(e: SMHException): SMHException(
     errorCode = e.errorCode,
     errorMessage = e.errorMessage,
     statusCode = e.statusCode,
+    requestId = e.requestId,
+    smhRequestId = e.smhRequestId,
     message = e.message ?: "",
     headers = e.headers
 ) {
@@ -67,13 +73,15 @@ class SMHQuotaLimitReachedException(e: SMHException): SMHException(
     errorCode = e.errorCode,
     errorMessage = e.errorMessage,
     statusCode = e.statusCode,
+    requestId = e.requestId,
+    smhRequestId = e.smhRequestId,
     message = e.message ?: "",
     headers = e.headers
 )
 
-class SMHQuotaInsufficientException(val remainSize: BigDecimal?): SMHException(
-    errorCode = QuotaLimitReachedErrorCode,
-)
+//class SMHQuotaInsufficientException(val remainSize: BigDecimal?): SMHException(
+//    errorCode = QuotaLimitReachedErrorCode,
+//)
 
 val SMHNoUserException = SMHIllegalAccessException("NoUser")
 
@@ -84,9 +92,9 @@ internal const val QuotaLimitReachedErrorCode = "QuotaLimitReached"
  * @property request 请求
  */
 open class SMHServiceBaseException: Exception {
-    constructor() : super()
+//    constructor() : super()
     constructor(message: String?) : super(message)
-    constructor(message: String?, cause: Throwable?) : super(message, cause)
+//    constructor(message: String?, cause: Throwable?) : super(message, cause)
     constructor(cause: Throwable?) : super(cause)
 
     @JvmField var request: Request? = null

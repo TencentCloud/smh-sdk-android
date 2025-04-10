@@ -42,8 +42,8 @@ val <T> SMHResponse<T>.isSuccess: Boolean
 
     get() = this is SMHResponse.Success
 
-val <T> SMHResponse<T>.dataOrNull: T?
-    get() = (this as? SMHResponse.Success)?.data
+//val <T> SMHResponse<T>.dataOrNull: T?
+//    get() = (this as? SMHResponse.Success)?.data
 
 fun <T> SMHResponse<T>.code(): Int  = when (this) {
     is SMHResponse.Success -> this.code
@@ -93,5 +93,5 @@ val <T> SMHResponse<T>.checkSuccess: T?
 val <T> SMHResponse<T>.statusCode: Int?
     get() = (this as? SMHResponse.ApiError)?.err?.statusCode
 
-val <T> SMHResponse<T>.errorCode: String?
-    get() = (this as? SMHResponse.ApiError)?.err?.errorCode
+//val <T> SMHResponse<T>.errorCode: String?
+//    get() = (this as? SMHResponse.ApiError)?.err?.errorCode

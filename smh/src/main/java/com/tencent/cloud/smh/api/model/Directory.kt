@@ -33,9 +33,15 @@ data class Directory(@JvmField val path: String? = null) {
     fun directoryPath() = path?: ""
 }
 
-
+/**
+ * 文件夹创建结果
+ * @property inode 最后一级文件目录ID
+ * @property path 表示最终的目录或相簿路径，因为可能存在自动重命名，所以这里的最终路径可能不等同于创建目录或相簿时指定的路径；
+ */
 data class CreateDirectoryResult(
-    val creationTime: String,
+    val inode: String? = null,
+    val path: List<String>? = null,
+    val creationTime: String? = null,
 )
 
 data class FilesPath(

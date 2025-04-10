@@ -157,6 +157,10 @@ enum class ConflictStrategy {
  * @property authorityList 文件创建时间
  * @property isExist 查询文件信息时是否存在
  * @property localSync 文件同步配置
+ * @property labels 文件标签列表
+ * @property category 文件分类
+ * @property localCreationTime 本地创建时间
+ * @property localModificationTime 本地修改时间
  */
 data class MediaContent(
     @JvmField val name: String,
@@ -183,6 +187,10 @@ data class MediaContent(
     @JvmField val userId: String? = null,
     @JvmField val inode: String? = null,
     @JvmField val isFavorite: Boolean? = null,
+    @JvmField val labels: List<String>? = null,
+    @JvmField val category: String? = null,
+    @JvmField val localCreationTime: String? = null,
+    @JvmField val localModificationTime: String? = null
 )
 
 /**
@@ -207,12 +215,110 @@ data class RecycledItem(
     @JvmField val authorityButtonList: MediaAuthorityButton? = null,
 )
 
+/**
+ * 回收站文件详细信息
+ *
+ * @property type 条目类型
+ * @property creationTime 文件创建/上传时间
+ * @property modificationTime 最后修改时间
+ * @property contentType 媒体类型
+ * @property size 文件大小（字符串格式）
+ * @property eTag 文件ETag
+ * @property crc64 文件CRC64校验值（字符串格式）
+ * @property cosUrl 文件访问URL
+ * @property cosUrlExpiration URL有效期
+ * @property metaData 文件元数据
+ * @property previewByDoc 是否支持WPS预览
+ * @property previewByCI 是否支持万象预览
+ * @property previewAsIcon 是否使用预览图作为图标
+ * @property fileType 文件类型
+ * @property availableCosUrls 备用访问URL列表
+ * @property labels 文件标签列表
+ * @property category 文件分类
+ * @property localCreationTime 本地创建时间
+ * @property localModificationTime 本地修改时间
+ */
+data class RecycledItemInfo(
+    @JvmField val type: String? = null,
+    @JvmField val creationTime: String? = null,
+    @JvmField val modificationTime: String? = null,
+    @JvmField val contentType: String? = null,
+    @JvmField val size: String? = null,
+    @JvmField val eTag: String? = null,
+    @JvmField val crc64: String? = null,
+    @JvmField val cosUrl: String? = null,
+    @JvmField val cosUrlExpiration: String? = null,
+    @JvmField val metaData: Map<String, String>? = null,
+    @JvmField val fileType: String? = null,
+    @JvmField val previewByDoc: Boolean? = null,
+    @JvmField val previewByCI: Boolean? = null,
+    @JvmField val previewAsIcon: Boolean? = null,
+    @JvmField val availableCosUrls: List<String>? = null,
+    @JvmField val labels: List<String>? = null,
+    @JvmField val category: String? = null,
+    @JvmField val localCreationTime: String? = null,
+    @JvmField val localModificationTime: String? = null
+)
+
 data class DeleteMediaResult(
     val recycledItemId: Long,
 )
 
-//@Parcelize
-//data class MetaData(
-//    @JvmField val data: Map<String, String>,
-//
-//): Parcelable
+/**
+ * 空间首页内容，会忽略目录的层级关系，列出空间下所有文件
+ *
+ * @property nextMarker 分页标识符
+ * @property contents 目录内容列表
+ */
+data class ContentsView(
+    @JvmField val nextMarker: String? = null,
+    @JvmField val contents: List<ContentsViewItem>
+)
+
+/**
+ * 空间首页内容项
+ *
+ * @property name 名称
+ * @property path 路径（仅当withPath为true时返回）
+ * @property inode 文件目录ID
+ * @property type 条目类型
+ * @property creationTime 创建时间
+ * @property modificationTime 修改时间
+ * @property versionId 版本号（仅文件）
+ * @property contentType 媒体类型（仅文件）
+ * @property size 文件大小（字符串格式，仅文件）
+ * @property eTag ETag
+ * @property crc64 CRC64校验值（字符串格式，仅文件）
+ * @property metaData 元数据（仅文件）
+ * @property fileType 文件类型（仅文件）
+ * @property previewByDoc 是否支持WPS预览（仅文件）
+ * @property previewByCI 是否支持万象预览（仅文件）
+ * @property previewAsIcon 是否使用预览图作为图标（仅文件）
+ * @property labels 文件标签列表
+ * @property category 文件分类（仅文件）
+ * @property localCreationTime 本地创建时间（仅文件）
+ * @property localModificationTime 本地修改时间（仅文件）
+ */
+data class ContentsViewItem(
+    @JvmField val name: String? = null,
+    @JvmField val path: List<String>? = null,
+    @JvmField val inode: String? = null,
+    @JvmField val type: String? = null,
+    @JvmField val creationTime: String? = null,
+    @JvmField val modificationTime: String? = null,
+    @JvmField val versionId: String? = null,
+    @JvmField val contentType: String? = null,
+    @JvmField val size: String? = null,
+    @JvmField val eTag: String? = null,
+    @JvmField val crc64: String? = null,
+    @JvmField val metaData: Map<String, String>? = null,
+    @JvmField val fileType: String? = null,
+    @JvmField val previewByDoc: Boolean? = null,
+    @JvmField val previewByCI: Boolean? = null,
+    @JvmField val previewAsIcon: Boolean? = null,
+    @JvmField val labels: List<String>? = null,
+    @JvmField val category: String? = null,
+    @JvmField val localCreationTime: String? = null,
+    @JvmField val localModificationTime: String? = null
+)
+

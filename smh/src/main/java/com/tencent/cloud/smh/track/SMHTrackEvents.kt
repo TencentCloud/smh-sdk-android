@@ -92,25 +92,25 @@ open class SMHFailureTrackEvent(
     eventCode = eventCode,
 )
 
-class SuccessDownloadTrackEvent(
-    smhUser: SMHUser,
-    smhPath: String,
-    localUri: String,
-    tookTime: Long,
-    contentLength: Long,
-): SuccessTransferTrackEvent(
-    eventCode = DownloadEventCode, smhUser, smhPath, localUri, tookTime, contentLength
-)
-
-class SuccessUploadTrackEvent(
-    smhUser: SMHUser,
-    smhPath: String,
-    localUri: String,
-    tookTime: Long,
-    contentLength: Long,
-): SuccessTransferTrackEvent(
-    eventCode = UploadEventCode, smhUser, smhPath, localUri, tookTime, contentLength
-)
+//class SuccessDownloadTrackEvent(
+//    smhUser: SMHUser,
+//    smhPath: String,
+//    localUri: String,
+//    tookTime: Long,
+//    contentLength: Long,
+//): SuccessTransferTrackEvent(
+//    eventCode = DownloadEventCode, smhUser, smhPath, localUri, tookTime, contentLength
+//)
+//
+//class SuccessUploadTrackEvent(
+//    smhUser: SMHUser,
+//    smhPath: String,
+//    localUri: String,
+//    tookTime: Long,
+//    contentLength: Long,
+//): SuccessTransferTrackEvent(
+//    eventCode = UploadEventCode, smhUser, smhPath, localUri, tookTime, contentLength
+//)
 
 open class SuccessTransferTrackEvent(
     eventCode: String,
@@ -139,27 +139,27 @@ open class SuccessTransferTrackEvent(
     eventCode = eventCode,
 )
 
-class FailureUploadTrackEvent(
-    smhUser: SMHUser,
-    smhPath: String,
-    localUri: String,
-    tookTime: Long,
-    contentLength: Long,
-    exception: Exception
-): FailureTransferTrackEvent(
-    eventCode = UploadEventCode, smhUser, smhPath, localUri, tookTime, contentLength, exception
-)
-
-class FailureDownloadTrackEvent(
-    smhUser: SMHUser,
-    smhPath: String,
-    localUri: String,
-    tookTime: Long,
-    contentLength: Long,
-    exception: Exception
-): FailureTransferTrackEvent(
-    eventCode = DownloadEventCode, smhUser, smhPath, localUri, tookTime, contentLength, exception
-)
+//class FailureUploadTrackEvent(
+//    smhUser: SMHUser,
+//    smhPath: String,
+//    localUri: String,
+//    tookTime: Long,
+//    contentLength: Long,
+//    exception: Exception
+//): FailureTransferTrackEvent(
+//    eventCode = UploadEventCode, smhUser, smhPath, localUri, tookTime, contentLength, exception
+//)
+//
+//class FailureDownloadTrackEvent(
+//    smhUser: SMHUser,
+//    smhPath: String,
+//    localUri: String,
+//    tookTime: Long,
+//    contentLength: Long,
+//    exception: Exception
+//): FailureTransferTrackEvent(
+//    eventCode = DownloadEventCode, smhUser, smhPath, localUri, tookTime, contentLength, exception
+//)
 
 open class FailureTransferTrackEvent(
     eventCode: String,

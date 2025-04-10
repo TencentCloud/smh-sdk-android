@@ -85,7 +85,11 @@ class UploadFileRequest(
     val inputStream: InputStream? = null,
     val conflictStrategy: ConflictStrategy? = null,
     val confirmKey: String? = null,
-    val meta: Map<String, String>? = null
+    val meta: Map<String, String>? = null,
+    val labels: List<String>? = null,
+    val category: String? = null,
+    val localCreationTime: String? = null,
+    val localModificationTime: String? = null
 ): SMHTransferRequest(key){
     var initMultipleUploadListener: SMHInitMultipleUploadListener? = null
     init {

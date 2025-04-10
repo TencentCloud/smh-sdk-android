@@ -26,11 +26,19 @@ import com.google.gson.annotations.SerializedName
  * @property size 文件大小
  * @property beginningHash 文件头hash
  * @property fullHash 文件整体hash
+ * @property labels 标签
+ * @property category 分类
+ * @property localCreationTime 本地创建时间
+ * @property localModificationTime 本地修改时间
  */
-data class QuickUpload(
-    val size: Long,
-    val beginningHash: String,
+data class UploadRequestBody(
+    val size: Long? = null,
+    val beginningHash: String? = null,
     val fullHash: String? = null,
+    val labels: List<String>? = null,
+    val category: String? = null,
+    val localCreationTime: String? = null,
+    val localModificationTime: String? = null
 )
 
 /**
@@ -108,6 +116,7 @@ data class ConfirmUpload(
     @JvmField val modificationTime: String? = null,
     @JvmField val eTag: String? = null,
     @JvmField var metaData: Map<String, String>? = null,
+    @JvmField val virusAuditStatus: Int? = null,
 ) {
     val fileName: String?
         get() = path.lastOrNull()
@@ -117,7 +126,11 @@ data class ConfirmUpload(
 }
 
 data class ConfirmUploadRequestBody(
-    @JvmField val crc64: String?
+    @JvmField val crc64: String? = null,
+    @JvmField val labels: List<String>? = null,
+    @JvmField val category: String? = null,
+    @JvmField val localCreationTime: String? = null,
+    @JvmField val localModificationTime: String? = null
 )
 
 /**

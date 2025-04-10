@@ -24,9 +24,6 @@ class EnumConverterFactory : Converter.Factory() {
 fun <E : Enum<*>> getSerializedNameValue(e: E): String {
     try {
         return e.javaClass.getField(e.name).getAnnotation(SerializedName::class.java).value
-    } catch (exception: NoSuchFieldException) {
-        exception.printStackTrace()
-    }
-
+    } catch (exception: NoSuchFieldException) { exception.printStackTrace() }
     return ""
 }

@@ -20,13 +20,13 @@ abstract class TrackEvent(
         val gson = Gson()
     }
 
-    fun track() {
-        if (isIncludeBeacon()) {
-            val params = buildParams().toMutableMap()
-            params.putAll(commonParams())
-            directReport(getBeaconKey(), eventCode, params)
-        }
-    }
+//    fun track() {
+//        if (isIncludeBeacon()) {
+//            val params = buildParams().toMutableMap()
+//            params.putAll(commonParams())
+//            directReport(getBeaconKey(), eventCode, params)
+//        }
+//    }
 
     fun trackWithBeaconParams(context: Context) {
         if (isIncludeBeacon()) {
@@ -54,9 +54,7 @@ private fun isIncludeBeacon(): Boolean {
         Class.forName("com.tencent.beacon.event.open.BeaconReport")
         Class.forName("com.tencent.qimei.sdk.QimeiSDK")
         true
-    } catch (var1: ClassNotFoundException) {
-        false
-    }
+    } catch (var1: ClassNotFoundException) { false }
 }
 
 private fun directReport(beaconKey: String, eventCode: String, params: Map<String, String>) {

@@ -194,13 +194,12 @@ class SMHNetworkCall<S : Any>(
                     }
                 }
             }
-        } catch (ignore: NoSuchFieldException) {
-        } catch (ignore: IllegalAccessException) {
-        } catch (ignore: ClassCastException) {
+        } catch (ignore: NoSuchFieldException) { } catch (ignore: IllegalAccessException) { } catch (ignore: ClassCastException) { }
+        eventListener?.apply {
+            QCloudLogger.i(
+                QCloudHttpClient.HTTP_LOG_TAG,
+                eventListener.toString()
+            )
         }
-        QCloudLogger.i(
-            QCloudHttpClient.HTTP_LOG_TAG,
-            eventListener?.toString()
-        )
     }
 }

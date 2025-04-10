@@ -23,6 +23,7 @@ import com.tencent.cloud.smh.api.SMHResult
 import com.tencent.cloud.smh.api.SMHService
 import com.tencent.cloud.smh.api.model.*
 import com.tencent.cloud.smh.api.retrofit.data
+import com.tencent.cloud.smh.utils.Utils
 import java.lang.Exception
 
 /**
@@ -46,7 +47,7 @@ interface SMHUser {
      *
      * @return 空间状态
      */
-    suspend fun getSpaceState(): SMHResult<UserSpaceState>
+    suspend fun getSpaceState(smhCollection: SMHCollection): SMHResult<UserSpaceState>
 
     /**
      * 获取访问凭证
@@ -101,22 +102,23 @@ abstract class SMHSimpleUser : SMHUser {
         return SMHResult.Failure(UnsupportedOperationException())
     }
 
-    override suspend fun getSpaceState(): SMHResult<UserSpaceState> {
+    override suspend fun getSpaceState(smhCollection: SMHCollection): SMHResult<UserSpaceState> {
         // 从 SMH Server 获取配额信息
 
         val accessToken = provideAccessToken()
 
         try {
-            val capacity = SMHService.shared.getQuotaCapacity(
+            val capacity = smhCollection.shared.getQuotaCapacity(
                     libraryId = libraryId,
                     spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                     accessToken = accessToken.token
             ).data.capacity
 
-            val size = SMHService.shared.getSpaceSize(
+            val size = smhCollection.shared.getSpaceSize(
                     libraryId = libraryId,
                     spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
-                    accessToken = accessToken.token
+                    accessToken = accessToken.token,
+                    userId = null
             ).data.size
 
             return SMHResult.Success(UserSpaceState(capacity = capacity, size = size))
@@ -133,7 +135,7 @@ abstract class SMHSimpleUser : SMHUser {
  * @param libraryId
  * @param librarySecret
  */
-class StaticUser(libraryId: String, librarySecret: String) : SMHSimpleUser() {
+open class StaticUser(libraryId: String, librarySecret: String, val host: String = "api.tencentsmh.cn") : SMHSimpleUser() {
 
     private var library = Library(libraryId, librarySecret)
 
@@ -150,19 +152,20 @@ class StaticUser(libraryId: String, librarySecret: String) : SMHSimpleUser() {
             throw SMHNoUserException
         }
 
+        val shared = SMHService.shared(Utils.baseUrl(host))
         val et = validAccessToken
         if (et != null) {
             return if (et.isValid()) {
                 et
             } else {
-                validAccessToken = SMHService.shared.refreshAccessToken(
+                validAccessToken = shared.refreshAccessToken(
                     libraryId = libraryId,
                     accessToken = et.token
                 ).data.now()
                 validAccessToken!!
             }
         } else {
-            validAccessToken = SMHService.shared.getAccessToken(
+            validAccessToken = shared.getAccessToken(
                 libraryId = libraryId,
                 librarySecret = library.LibrarySecret,
                 grant = "admin"

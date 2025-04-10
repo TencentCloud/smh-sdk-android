@@ -23,7 +23,6 @@ import android.net.Uri
 import android.text.TextUtils
 import com.google.gson.Gson
 import com.tencent.cloud.smh.api.SMHService
-import com.tencent.cloud.smh.api.SMHService.Companion.baseUrl
 import com.tencent.cloud.smh.api.data
 import com.tencent.cloud.smh.api.dataOrNull
 import com.tencent.cloud.smh.api.model.*
@@ -51,6 +50,8 @@ import com.tencent.qcloud.track.QCloudTrackService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.io.InputStream
 import java.math.BigDecimal
 import java.net.URL
@@ -71,25 +72,26 @@ class SMHCollection @JvmOverloads constructor(
     private val context: Context,
     internal val user: SMHUser,
     val isDebuggable: Boolean = false,
-    customHost: String = "",
-    isPrivate: Boolean = false,
+    private val customHost: String = "",
+    val isPrivate: Boolean = false,
 ) {
-
+    val shared: SMHService
     private val httpClient = QCloudHttpClient.getDefault()
-
     internal val rootDirectory = Directory()
-
     private val libraryId get() = user.libraryId
     private val userSpace get() = user.userSpace
-    private val gson = Gson()
+
+    private val defaultHost = "api.tencentsmh.cn"
+    private fun host() = if (customHost.isNotEmpty()) {
+        customHost
+    } else {
+        defaultHost
+    }
 
     init {
         if(isDebuggable) {
             QCloudLogger.addAdapter(AndroidLogcatAdapter())
         }
-
-        SMHService.customHost = customHost
-        SMHService.isPrivate = isPrivate
 
         var packageName = ""
         var versionName = ""
@@ -99,6 +101,8 @@ class SMHCollection @JvmOverloads constructor(
             versionName = packageInfo.versionName
         } catch (_: Exception){}
         SMHService.userAgent = "app:$packageName/$versionName-sdk:${VersionInfo.getUserAgent()}"
+
+        shared = SMHService.shared(baseUrl())
 
         // 初始化QCloudTrack
         QCloudTrackService.getInstance().init(context.applicationContext)
@@ -156,14 +160,38 @@ class SMHCollection @JvmOverloads constructor(
      * @return 可用配额空间，单位是 Byte
      */
     suspend fun getSpaceQuotaRemainSize(): BigDecimal? {
-        return user.getSpaceState().dataOrNull?.remainSize
+        return user.getSpaceState(this).dataOrNull?.remainSize
     }
 
     /**
      * 获取用户空间状态
      */
-    suspend fun getUserSpaceState(): UserSpaceState = user.getSpaceState().data
+    suspend fun getUserSpaceState(): UserSpaceState = user.getSpaceState(this).data
 
+    fun baseUrl(): String {
+        val host = host()
+        return Utils.baseUrl(host)
+    }
+
+    fun getProtocol(): String{
+        val host = host()
+        return if(host.startsWith("https://", true)){
+            "https"
+        } else if(host.startsWith("http://", true)){
+            "http"
+        } else{
+            "https"
+        }
+    }
+
+    fun isHttps(): Boolean{
+        return "https" == getProtocol()
+    }
+
+    /**
+     * 是否为正式环境
+     */
+    fun isReleaseHost() = host() == defaultHost
 
     /**
      * 列出所有的文件列表
@@ -269,11 +297,12 @@ class SMHCollection @JvmOverloads constructor(
         orderType: OrderType? = null,
         orderDirection: OrderDirection? = null,
         directoryFilter: DirectoryFilter? = null,
+        sortType: String? = null,
         withInode: Boolean = false,
         withFavoriteStatus: Boolean = false,
     ): DirectoryContents {
         return runWithBeaconReport(RequestNameListDirectoryWithPage, dir.path) { accessToken ->
-            SMHService.shared.listDirectoryByPageSize(
+            shared.listDirectoryByPageSize(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dir.path ?: "",
@@ -284,6 +313,7 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection,
                 directoryFilter = directoryFilter,
+                sortType = sortType,
                 withInode = if(withInode) 1 else 0,
                 withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
             ).data.also { directoryContents ->
@@ -317,13 +347,14 @@ class SMHCollection @JvmOverloads constructor(
         orderType: OrderType? = null,
         orderDirection: OrderDirection? = null,
         directoryFilter: DirectoryFilter? = null,
+        sortType: String? = null,
         eTag: String? = null,
         withInode: Boolean = false,
         withFavoriteStatus: Boolean = false,
     ): DirectoryContents {
 
         return runWithBeaconReport(RequestNameListDirectoryWithMarker, dir.path) { accessToken ->
-            SMHService.shared.listDirectoryByMarkerLimit(
+            shared.listDirectoryByMarkerLimit(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dir.path ?: "",
@@ -334,6 +365,7 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection,
                 directoryFilter = directoryFilter,
+                sortType = sortType,
                 eTag = eTag,
                 withInode = if(withInode) 1 else 0,
                 withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
@@ -365,12 +397,13 @@ class SMHCollection @JvmOverloads constructor(
         orderType: OrderType? = null,
         orderDirection: OrderDirection? = null,
         directoryFilter: DirectoryFilter? = null,
+        sortType: String? = null,
         withInode: Boolean = false,
         withFavoriteStatus: Boolean = false,
     ): DirectoryContents {
 
         return runWithBeaconReport("ListDirectoryWithOffset", dir.path) { accessToken ->
-            SMHService.shared.listDirectoryByOffsetLimit(
+            shared.listDirectoryByOffsetLimit(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dir.path ?: "",
@@ -381,6 +414,7 @@ class SMHCollection @JvmOverloads constructor(
                 orderBy = orderType,
                 orderByType = orderDirection,
                 directoryFilter = directoryFilter,
+                sortType = sortType,
                 withInode = if(withInode) 1 else 0,
                 withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
             ).data.also { directoryContents ->
@@ -397,7 +431,7 @@ class SMHCollection @JvmOverloads constructor(
      */
     suspend fun getRoleList(): List<Role> {
         return runWithBeaconReport("GetRoleList", null) { accessToken ->
-            SMHService.shared.getRoleList(
+            shared.getRoleList(
                 libraryId = libraryId,
                 accessToken = accessToken,
             ).data
@@ -503,7 +537,7 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun getMyAuthorizedDirectory(page: Int, pageSize: Int, orderType: OrderType? = null,
                                          orderDirection: OrderDirection? = null): AuthorizedContent {
         return runWithBeaconReport("ListAuthorizedDirectory", null) { accessToken ->
-             SMHService.shared.getMyAuthorizedDirectory(
+             shared.getMyAuthorizedDirectory(
                 libraryId = libraryId,
                 page = page,
                 pageSize = pageSize,
@@ -519,7 +553,7 @@ class SMHCollection @JvmOverloads constructor(
         marker: String?, limit: Int, orderType: OrderType?, orderDirection: OrderDirection?, eTag: String?
     ): AuthorizedContent {
         return runWithBeaconReport("ListAuthorizedDirectory", null) { accessToken ->
-            SMHService.shared.getMyAuthorizedDirectoryWithMarker(
+            shared.getMyAuthorizedDirectoryWithMarker(
                 libraryId = libraryId,
                 marker = marker,
                 limit = limit,
@@ -567,10 +601,13 @@ class SMHCollection @JvmOverloads constructor(
         orderByType: OrderDirection? = null,
         withInode: Boolean = false,
         withFavoriteStatus: Boolean = false,
+        searchMode: String? = null,
+        labels: List<String>? = null,
+        categories: List<String>? = null,
     ): SearchPartContent {
 
         return runWithBeaconReport("InitSearch", keyword) { accessToken ->
-            SMHService.shared.initSearch(
+            shared.initSearch(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -583,7 +620,7 @@ class SMHCollection @JvmOverloads constructor(
                     extname ?: emptyList(),
                     creators ?: emptyList(),
                     minFileSize, maxFileSize, modificationTimeStart, modificationTimeEnd,
-                    orderBy, orderByType
+                    orderBy, orderByType, searchMode, labels, categories
                 )
             ).data
         }
@@ -596,16 +633,23 @@ class SMHCollection @JvmOverloads constructor(
      * @param searchId 搜索的 id 号
      * @param marker 分页标记
      */
-    suspend fun searchMore(searchId: String, marker: Long): SearchPartContent {
+    suspend fun searchMore(
+        searchId: String,
+        marker: Long,
+        withInode: Boolean = false,
+        withFavoriteStatus: Boolean = false,
+    ): SearchPartContent {
 
         return runWithBeaconReport("GetSearch", searchId) { accessToken ->
-            SMHService.shared.searchMore(
+            shared.searchMore(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 userId = userSpace.userId,
                 searchId = searchId,
                 marker = marker,
+                withInode = if(withInode) 1 else 0,
+                withFavoriteStatus = if(withFavoriteStatus) 1 else 0,
             ).data
         }
     }
@@ -618,7 +662,7 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun deleteSearch(searchId: String) {
 
         return runWithBeaconReport("DeleteSearch", searchId) { accessToken ->
-            SMHService.shared.deleteSearch(
+            shared.deleteSearch(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -645,7 +689,7 @@ class SMHCollection @JvmOverloads constructor(
         orderDirection: OrderDirection? = null,
     ): RecycledContents {
         return runWithBeaconReport("ListRecycled", null) { accessToken ->
-            SMHService.shared.listRecycled(
+            shared.listRecycled(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -667,7 +711,7 @@ class SMHCollection @JvmOverloads constructor(
         eTag: String? = null
     ): RecycledContents  {
         return runWithBeaconReport("ListRecycledWithMarker", null) { accessToken ->
-            SMHService.shared.listRecycledWithMarker(
+            shared.listRecycledWithMarker(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -686,18 +730,22 @@ class SMHCollection @JvmOverloads constructor(
      * 创建文件夹
      *
      * @param dir 文件夹
+     * @param withInode 0 或 1，是否返回 inode，即文件目录 ID，可选，默认不返回；
+     * @param conflictStrategy 冲突处理方式
      * @return 执行结果，true 表示创建成功，false 表示创建失败
      */
-    suspend fun createDirectory(dir: Directory): CreateDirectoryResult {
+    suspend fun createDirectory(dir: Directory, withInode: Boolean = false, conflictStrategy: ConflictStrategy? = null): CreateDirectoryResult? {
         val path = checkNotNull(dir.path)
         return runWithBeaconReport("PutDirectory", dir.path) { accessToken ->
-            SMHService.shared.createDirectory(
+            shared.createDirectory(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = path,
+                withInode = if(withInode) 1 else 0,
+                conflictStrategy = conflictStrategy,
                 accessToken = accessToken,
                 userId = userSpace.userId,
-            ).data
+            ).checkSuccess
         }
     }
 
@@ -714,7 +762,7 @@ class SMHCollection @JvmOverloads constructor(
         val targetPath = checkNotNull(target.path)
         val sourcePath = checkNotNull(source.path)
         return runWithBeaconReport("RenameDirectory", sourcePath) { accessToken ->
-            SMHService.shared.renameDirectory(
+            shared.renameDirectory(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = targetPath,
@@ -745,7 +793,7 @@ class SMHCollection @JvmOverloads constructor(
         val sourceKey = smhKey(sourceDir.path, sourceName)
         return runWithBeaconReport("RenameFile", sourceKey) { accessToken ->
             val targetKey = smhKey(targetDir.path, targetName)
-            SMHService.shared.renameFile(
+            shared.renameFile(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = targetKey,
@@ -769,11 +817,12 @@ class SMHCollection @JvmOverloads constructor(
     ): HeadFileContent {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("HeadFile", filePath) { accessToken ->
-            val headFileResponse = SMHService.shared.headFile(
+            val headFileResponse = shared.headFile(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             )
             headFileResponse.checkSuccess()
             HeadFileContent(headFileResponse.headers())
@@ -784,18 +833,23 @@ class SMHCollection @JvmOverloads constructor(
      * 删除文件夹
      *
      * @param dir 文件夹
-     * @return 执行结果，true 表示成功，false 表示失败
+     * @param permanent 是否永久删除，为 true 表示不放到回收站中
+     * @return 执行结果
      */
-    suspend fun deleteDirectory(dir: Directory): Boolean {
+    suspend fun deleteDirectory(
+        dir: Directory,
+        permanent: Boolean = false
+    ): DeleteMediaResult? {
         val path = checkNotNull(dir.path)
         return runWithBeaconReport("DeleteDirectory", dir.path) { accessToken ->
-            SMHService.shared.deleteDirectory(
+            shared.deleteDirectory(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = path,
+                permanent = if(permanent) 1 else 0,
                 accessToken = accessToken,
                 userId = userSpace.userId,
-            ).checkSuccess()
+            ).checkSuccess
         }
     }
 
@@ -813,17 +867,20 @@ class SMHCollection @JvmOverloads constructor(
         name: String,
         dir: Directory = rootDirectory,
         historyId: Long? = null,
-        purpose: Purpose? = null
+        purpose: Purpose? = null,
+        trafficLimit: Long? = null
     ): FileInfo {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("GetFileInfo", filePath) { accessToken ->
-            SMHService.shared.getFileInfo(
+            shared.getFileInfo(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 historyId = historyId,
                 purpose = purpose,
-                accessToken = accessToken
+                trafficLimit = trafficLimit,
+                accessToken = accessToken,
+                userId = null
             ).data.also { fileInfo ->
                 fileInfo.metaData = Utils.metaDataTrim(fileInfo.metaData)!!
             }
@@ -838,15 +895,20 @@ class SMHCollection @JvmOverloads constructor(
     @JvmOverloads
     suspend fun getDirectoryInfo(
         dir: Directory = rootDirectory,
+        withInode: Int? = 0,
+        withFavoriteStatus: Int? = 0,
     ): DirectoryInfo {
         return runWithBeaconReport("GetDirectoryInfo", dir.path) { accessToken ->
-            SMHService.shared.getDirectoryInfo(
+            shared.getDirectoryInfo(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dir.path?: "",
-                accessToken = accessToken
+                withInode = withInode,
+                withFavoriteStatus = withFavoriteStatus,
+                accessToken = accessToken,
+                userId = null
             ).data.also { directoryInfo ->
-                directoryInfo.metaData = Utils.metaDataTrim(directoryInfo.metaData)!!
+                directoryInfo.metaData = Utils.metaDataTrim(directoryInfo.metaData)
             }
         }
     }
@@ -875,7 +937,7 @@ class SMHCollection @JvmOverloads constructor(
     ): ThumbnailResult {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("GetThumbnail", filePath) { accessToken ->
-            val thumbnailResult = SMHService.shared.getThumbnail(
+            val thumbnailResult = shared.getThumbnail(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
@@ -898,31 +960,34 @@ class SMHCollection @JvmOverloads constructor(
      *
      * @param name 文件名，如果没有设置文件夹，则为文件路径
      * @param dir 所在文件夹，默认是根目录下
-     * @param uri 本地文件 URI
      * @param conflictStrategy 冲突处理方式
+     * @param filesize 上传文件大小，单位为字节（Byte），用于判断剩余空间是否足够
      * @return 上传信息 http状态码为202代表文件头hash命中
      */
     @JvmOverloads
     suspend fun quickUpload(
         name: String,
         dir: Directory = rootDirectory,
-        quickUpload: QuickUpload,
+        uploadRequestBody: UploadRequestBody,
         conflictStrategy: ConflictStrategy? = null,
-        meta: Map<String, String>? = null
+        meta: Map<String, String>? = null,
+        filesize: Long? = null
     ): RawResponse {
         val filePath = smhKey(dir.path, name)
         val mutableMap: MutableMap<String, String> =
             meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }?.toMutableMap() ?: emptyMap<String, String>().toMutableMap()
         mutableMap["${X_SMH_META_KEY_PREFIX}creation-date"] = Date().formatToUtc()
         return runWithBeaconReport("InitUpload", filePath) { accessToken ->
-            val smhResponse = SMHService.shared.quickUpload(
+            val smhResponse = shared.quickUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
-                quickUpload = quickUpload,
+                uploadRequestBody = uploadRequestBody,
                 conflictStrategy = conflictStrategy,
-                metaData = mutableMap
+                metaData = mutableMap,
+                filesize = filesize,
+                userId = null
             )
             val data = smhResponse.data
             data.statusCode = smhResponse.code()
@@ -946,19 +1011,22 @@ class SMHCollection @JvmOverloads constructor(
         meta: Map<String, String>? = null,
         dir: Directory = rootDirectory,
         conflictStrategy: ConflictStrategy? = null,
-        filesize: Long? = null
+        filesize: Long? = null,
+        uploadRequestBody: UploadRequestBody? = null,
     ): InitUpload {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("InitUpload", filePath) { accessToken ->
             val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
-            SMHService.shared.initUpload(
+            shared.initUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
                 conflictStrategy = conflictStrategy,
                 filesize = filesize,
-                metaData = metaData ?: emptyMap()
+                metaData = metaData ?: emptyMap(),
+                uploadRequestBody = uploadRequestBody,
+                userId = null
             ).data
         }
     }
@@ -979,19 +1047,22 @@ class SMHCollection @JvmOverloads constructor(
         meta: Map<String, String>? = null,
         dir: Directory = rootDirectory,
         conflictStrategy: ConflictStrategy? = null,
-        filesize: Long? = null
+        filesize: Long? = null,
+        uploadRequestBody: UploadRequestBody? = null,
     ): InitUpload {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("InitMultipartUpload", filePath) { accessToken ->
             val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
-            SMHService.shared.publicInitMultipartUpload(
+            shared.publicInitMultipartUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
                 conflictStrategy = conflictStrategy,
                 filesize = filesize,
-                metaData = metaData ?: emptyMap()
+                metaData = metaData ?: emptyMap(),
+                uploadRequestBody = uploadRequestBody,
+                userId = null
             ).data
         }
     }
@@ -1004,11 +1075,12 @@ class SMHCollection @JvmOverloads constructor(
      */
     suspend fun publicListMultipartUpload(confirmKey: String): PublicMultiUploadMetadata {
         val meta = runWithBeaconReport("GetMultipartUploadMetadata", confirmKey) { accessToken ->
-            SMHService.shared.publicListMultipartUpload(
+            shared.publicListMultipartUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 confirmKey = confirmKey,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).data
         }
         meta.confirmKey = confirmKey
@@ -1023,11 +1095,12 @@ class SMHCollection @JvmOverloads constructor(
      */
     suspend fun publicRenewMultipartUpload(confirmKey: String): InitUpload {
         return runWithBeaconReport("RenewMultipartUpload", confirmKey) { accessToken ->
-            SMHService.shared.publicRenewMultipartUpload(
+            shared.publicRenewMultipartUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 confirmKey = confirmKey,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).data
         }
     }
@@ -1055,7 +1128,7 @@ class SMHCollection @JvmOverloads constructor(
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("InitMultipartUpload", filePath) { accessToken ->
             val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
-            SMHService.shared.initMultipartUpload(
+            shared.initMultipartUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
@@ -1063,7 +1136,8 @@ class SMHCollection @JvmOverloads constructor(
                 conflictStrategy = conflictStrategy,
                 filesize = filesize,
                 metaData = metaData ?: emptyMap(),
-                partNumberRange = PartNumberRange(partNumberRange)
+                partNumberRange = PartNumberRange(partNumberRange),
+                userId = null
             ).data
         }
     }
@@ -1076,11 +1150,12 @@ class SMHCollection @JvmOverloads constructor(
      */
     suspend fun listMultipartUpload(confirmKey: String): MultiUploadMetadata {
         val meta = runWithBeaconReport("GetMultipartUploadMetadata", confirmKey) { accessToken ->
-                SMHService.shared.listMultipartUpload(
+                shared.listMultipartUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 confirmKey = confirmKey,
-                accessToken = accessToken
+                accessToken = accessToken,
+                    userId = null
             ).data
         }
         meta.confirmKey = confirmKey
@@ -1096,12 +1171,13 @@ class SMHCollection @JvmOverloads constructor(
      */
     suspend fun renewMultipartUpload(confirmKey: String, partNumberRange: String): InitMultipartUpload {
         return runWithBeaconReport("RenewMultipartUpload", confirmKey) { accessToken ->
-            SMHService.shared.renewMultipartUpload(
+            shared.renewMultipartUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 confirmKey = confirmKey,
                 accessToken = accessToken,
-                partNumberRange = PartNumberRange(partNumberRange)
+                partNumberRange = PartNumberRange(partNumberRange),
+                userId = null
             ).data
         }
     }
@@ -1114,11 +1190,12 @@ class SMHCollection @JvmOverloads constructor(
      */
     suspend fun cancelUpload(confirmKey: String): Boolean {
         return runWithBeaconReport("CancelUpload", confirmKey) { accessToken ->
-            SMHService.shared.cancelUpload(
+            shared.cancelUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 confirmKey = confirmKey,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).isSuccess
         }
     }
@@ -1130,14 +1207,28 @@ class SMHCollection @JvmOverloads constructor(
      * @return 上传结果
      */
     @JvmOverloads
-    suspend fun confirmUpload(confirmKey: String, crc64: String? = null): ConfirmUpload {
+    suspend fun confirmUpload(
+        confirmKey: String,
+        crc64: String? = null,
+        labels: List<String>? = null,
+        category: String? = null,
+        localCreationTime: String? = null,
+        localModificationTime: String? = null,
+    ): ConfirmUpload {
         return runWithBeaconReport("ConfirmUpload", confirmKey) { accessToken ->
-            SMHService.shared.confirmUpload(
+            shared.confirmUpload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 confirmKey = confirmKey,
-                confirmUploadRequestBody = ConfirmUploadRequestBody(crc64),
+                confirmUploadRequestBody = ConfirmUploadRequestBody(
+                    crc64,
+                    labels = labels,
+                    category = category,
+                    localCreationTime = localCreationTime,
+                    localModificationTime = localModificationTime
+                ),
                 accessToken = accessToken,
+                userId = null
             ).data.also { confirmUpload ->
                 confirmUpload.metaData = Utils.metaDataTrim(confirmUpload.metaData)
             }
@@ -1169,6 +1260,10 @@ class SMHCollection @JvmOverloads constructor(
         confirmKey: String? = null,
         conflictStrategy: ConflictStrategy? = null,
         meta: Map<String, String>? = null,
+        labels: List<String>? = null,
+        category: String? = null,
+        localCreationTime: String? = null,
+        localModificationTime: String? = null,
         stateListener: SMHStateListener? = null,
         progressListener: SMHProgressListener? = null,
         resultListener: SMHResultListener? = null,
@@ -1182,7 +1277,11 @@ class SMHCollection @JvmOverloads constructor(
             inputStream = inputStream,
             confirmKey = confirmKey,
             conflictStrategy = conflictStrategy,
-            meta = meta
+            meta = meta,
+            labels = labels,
+            category = category,
+            localCreationTime = localCreationTime,
+            localModificationTime = localModificationTime,
         )
         uploadFileRequest.stateListener = stateListener
         uploadFileRequest.progressListener = progressListener
@@ -1210,11 +1309,12 @@ class SMHCollection @JvmOverloads constructor(
     ): InitDownload {
         val filePath = smhKey(dir.path, name)
         val resp = runWithBeaconReport("InitDownload", filePath) { accessToken ->
-             SMHService.shared.initDownload(
+             shared.initDownload(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
-                accessToken = accessToken
+                accessToken = accessToken,
+                 userId = null
             )
         }
         resp.checkSuccess()
@@ -1274,7 +1374,7 @@ class SMHCollection @JvmOverloads constructor(
      * @param name 文件名，如果没有设置文件夹，则为文件路径
      * @param dir 文件所在文件夹，默认为根目录
      * @param permanent 是否永久删除，为 true 表示不放到回收站中
-     * @return 执行结果 如果未开通回收站，或者 permanent 为true 表示
+     * @return 执行结果
      */
     @JvmOverloads
     suspend fun delete(
@@ -1284,12 +1384,13 @@ class SMHCollection @JvmOverloads constructor(
     ): DeleteMediaResult? {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("DeleteFile", filePath) { accessToken ->
-            SMHService.shared.deleteFile(
+            shared.deleteFile(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 permanent = if(permanent) 1 else 0,
                 filePath = filePath,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).checkSuccess
         }
     }
@@ -1303,11 +1404,12 @@ class SMHCollection @JvmOverloads constructor(
         itemId: Long
     ): Boolean {
         return runWithBeaconReport("DeleteRecycled", itemId.toString()) { accessToken ->
-            SMHService.shared.deleteRecycledItem(
+            shared.deleteRecycledItem(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 itemId = itemId,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).checkSuccess()
         }
     }
@@ -1321,11 +1423,12 @@ class SMHCollection @JvmOverloads constructor(
         itemIds: List<Long>
     ): Boolean {
         return runWithBeaconReport("DeletesRecycled", null) { accessToken ->
-            SMHService.shared.deleteRecycledItems(
+            shared.deleteRecycledItems(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 itemIds = itemIds,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).checkSuccess()
         }
     }
@@ -1339,11 +1442,12 @@ class SMHCollection @JvmOverloads constructor(
         itemId: Long
     ): String? {
         return runWithBeaconReport("RestoreRecycled", itemId.toString()) { accessToken ->
-            SMHService.shared.restoreRecycledItem(
+            shared.restoreRecycledItem(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 itemId = itemId,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).data.path?.joinToString("/")
         }
     }
@@ -1352,18 +1456,25 @@ class SMHCollection @JvmOverloads constructor(
      * 将文件批量从回收站中恢复
      *
      * @param itemIds 回收站文件 id
+     * @param queryTaskPolling 是否轮询查询任务结果，默认不轮询
      */
     suspend fun restoreRecycledItems(
-        itemIds: List<Long>
+        itemIds: List<Long>,
+        queryTaskPolling: Boolean = false
     ): BatchResponse {
-        return runWithBeaconReport("RestoresRecycled", null) { accessToken ->
-            SMHService.shared.restoreRecycledItems(
+        var response = runWithBeaconReport("RestoresRecycled", null) { accessToken ->
+            shared.restoreRecycledItems(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 itemIds = itemIds,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).data
         }
+        if(queryTaskPolling){
+            response = queryTaskPolling(response)
+        }
+        return response
     }
 
     /**
@@ -1371,10 +1482,11 @@ class SMHCollection @JvmOverloads constructor(
      */
     suspend fun clearRecycledItem(): Boolean {
         return runWithBeaconReport("ClearRecycled", null) { accessToken ->
-            SMHService.shared.clearRecycled(
+            shared.clearRecycled(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
-                accessToken = accessToken
+                accessToken = accessToken,
+                userId = null
             ).checkSuccess()
         }
     }
@@ -1397,13 +1509,14 @@ class SMHCollection @JvmOverloads constructor(
     ): ConfirmUpload {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("CreateSynLink", filePath) { accessToken ->
-            SMHService.shared.createSymLink(
+            shared.createSymLink(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
                 force = if (overrideOnNameConflict) 1 else 0,
-                linkTo = SymLinkBody(sourceFileName)
+                linkTo = SymLinkBody(sourceFileName),
+                userId = null
             ).data.also { confirmUpload ->
                 confirmUpload.metaData = Utils.metaDataTrim(confirmUpload.metaData)
             }
@@ -1414,55 +1527,75 @@ class SMHCollection @JvmOverloads constructor(
      * 批量删除
      *
      * @param items 需要批量删除的文件或文件夹
+     * @param queryTaskPolling 是否轮询查询任务结果，默认不轮询
      */
     suspend fun batchDelete(
-        items: List<BatchDeleteItem>
+        items: List<BatchDeleteItem>,
+        queryTaskPolling: Boolean = false
     ): BatchResponse {
-
-        return runWithBeaconReport("BatchDelete", items.getOrNull(0)?.path) { accessToken ->
-            SMHService.shared.batchDelete(
+        var response = runWithBeaconReport("BatchDelete", items.getOrNull(0)?.path) { accessToken ->
+            shared.batchDelete(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
-                items = items
+                items = items,
+                userId = null
             ).data
         }
+        if(queryTaskPolling){
+            response = queryTaskPolling(response)
+        }
+        return response
     }
 
     /**
      * 批量复制
      *
      * @param items 需要批量复制的文件或文件夹
+     * @param queryTaskPolling 是否轮询查询任务结果，默认不轮询
      */
     suspend fun batchCopy(
         items: List<BatchCopyItem>,
+        queryTaskPolling: Boolean = false
     ): BatchResponse {
-        return runWithBeaconReport("BatchCopy", items.getOrNull(0)?.copyFrom) { accessToken ->
-            SMHService.shared.batchCopy(
+        var response = runWithBeaconReport("BatchCopy", items.getOrNull(0)?.copyFrom) { accessToken ->
+            shared.batchCopy(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
-                items = items
+                items = items,
+                userId = null
             ).data
         }
+        if(queryTaskPolling){
+            response = queryTaskPolling(response)
+        }
+        return response
     }
 
     /**
      * 批量移动
      *
      * @param items 需要批量移动的文件或文件夹
+     * @param queryTaskPolling 是否轮询查询任务结果，默认不轮询
      */
     suspend fun batchMove(
         items: List<BatchMoveItem>,
+        queryTaskPolling: Boolean = false
     ): BatchResponse {
-        return runWithBeaconReport("BatchMove", items.getOrNull(0)?.from) { accessToken ->
-            SMHService.shared.batchMove(
+        var response = runWithBeaconReport("BatchMove", items.getOrNull(0)?.from) { accessToken ->
+            shared.batchMove(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
-                items = items
+                items = items,
+                userId = null
             ).data
         }
+        if(queryTaskPolling){
+            response = queryTaskPolling(response)
+        }
+        return response
     }
 
     /**
@@ -1470,18 +1603,65 @@ class SMHCollection @JvmOverloads constructor(
      *
      * @param shareAccessToken accessToken
      * @param items 需要批量保存至网盘的文件或文件夹
+     * @param queryTaskPolling 是否轮询查询任务结果，默认不轮询
      */
     suspend fun batchSaveToDisk(
         shareAccessToken: String,
         items: List<BatchSaveToDiskItem>,
+        queryTaskPolling: Boolean = false
     ): BatchResponse {
-        return runWithBeaconReport("BatchSaveToDisk", shareAccessToken) { accessToken ->
-            SMHService.shared.batchSaveToDisk(
+        var response = runWithBeaconReport("BatchSaveToDisk", shareAccessToken) { accessToken ->
+            shared.batchSaveToDisk(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 shareAccessToken = shareAccessToken,
-                items = items
+                items = items,
+                userId = null
+            ).data
+        }
+        if(queryTaskPolling){
+            response = queryTaskPolling(response)
+        }
+        return response
+    }
+
+    /**
+     * 查询批量任务
+     *
+     * @param taskIds 任务 id
+     */
+    suspend fun queryTasks(
+        taskIds: List<Long>
+    ): List<BatchResponse> {
+        val taskIdList = taskIds.joinToString(",")
+        return runWithBeaconReport("QueryTasks", taskIds.getOrNull(0).toString()) { accessToken ->
+            shared.queryTasks(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                taskIdList = taskIdList,
+                userId = null
+            ).data
+        }
+    }
+
+    /**
+     * 查询批量任务 单result
+     *
+     * @param taskIds 任务 id
+     */
+    suspend fun queryTasksSingleResult(
+        taskIds: List<Long>
+    ): List<BatchResponseSingleResult> {
+        val taskIdList = taskIds.joinToString(",")
+        return runWithBeaconReport("QueryTasksSingleResult", taskIds.getOrNull(0).toString()) { accessToken ->
+            shared.queryTasksSingleResult(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                taskIdList = taskIdList,
+                userId = null
             ).data
         }
     }
@@ -1501,51 +1681,14 @@ class SMHCollection @JvmOverloads constructor(
         conflictResolutionStrategy: ConflictStrategy? = null,
     ): AsyncCopyCrossSpaceResult {
         return runWithBeaconReport("AsyncCopyCrossSpace", dirPath) { accessToken ->
-            SMHService.shared.asyncCopyCrossSpace(
+            shared.asyncCopyCrossSpace(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 dirPath = dirPath,
                 conflictResolutionStrategy = conflictResolutionStrategy,
-                request = AsyncCopyCrossSpaceRequest(copyFrom, copyFromSpaceId)
-            ).data
-        }
-    }
-
-    /**
-     * 查询批量任务
-     *
-     * @param taskIds 任务 id
-     */
-    suspend fun queryTasks(
-        taskIds: List<Long>
-    ): List<BatchResponse> {
-        val taskIdList = taskIds.joinToString(",")
-        return runWithBeaconReport("QueryTasks", taskIds.getOrNull(0).toString()) { accessToken ->
-            SMHService.shared.queryTasks(
-                libraryId = libraryId,
-                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
-                accessToken = accessToken,
-                taskIdList = taskIdList
-            ).data
-        }
-    }
-
-    /**
-     * 查询批量任务 单result
-     *
-     * @param taskIds 任务 id
-     */
-    suspend fun queryTasksSingleResult(
-        taskIds: List<Long>
-    ): List<BatchResponseSingleResult> {
-        val taskIdList = taskIds.joinToString(",")
-        return runWithBeaconReport("QueryTasksSingleResult", taskIds.getOrNull(0).toString()) { accessToken ->
-            SMHService.shared.queryTasksSingleResult(
-                libraryId = libraryId,
-                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
-                accessToken = accessToken,
-                taskIdList = taskIdList
+                request = AsyncCopyCrossSpaceRequest(copyFrom, copyFromSpaceId),
+                userId = null
             ).data
         }
     }
@@ -1559,14 +1702,13 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun addAuthorityDirectory(dirPath: String, authorizeToContent: AuthorizeToContent) {
 
         return runWithBeaconReport("AddDirectoryAuthority", dirPath) { accessToken ->
-            SMHService.shared.addAuthorizeDirectory(
+            shared.addAuthorizeDirectory(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dirPath,
                 accessToken = accessToken,
                 authorizeToContent = authorizeToContent
-            ).checkSuccess()
-        }
+            ).checkSuccess() }
     }
 
     /**
@@ -1578,14 +1720,13 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun deleteDirectoryAuthority(dirPath: String, authorizeToContent: AuthorizeToContent) {
 
         return runWithBeaconReport("DeleteDirectoryAuthority", dirPath) { accessToken ->
-            SMHService.shared.deleteAuthorityDirectory(
+            shared.deleteAuthorityDirectory(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 dirPath = dirPath,
                 accessToken = accessToken,
                 authorizeToContent = authorizeToContent
-            ).checkSuccess()
-        }
+            ).checkSuccess() }
     }
 
 
@@ -1603,20 +1744,58 @@ class SMHCollection @JvmOverloads constructor(
     ): String? {
         return runWithBeaconReport("GetAlbumCover", albumName) { accessToken ->
             if (albumName != null) {
-                SMHService.shared.getAlbumCoverUrlInAlbum(
+                shared.getAlbumCoverUrlInAlbum(
                     libraryId = libraryId,
                     spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                     albumName = albumName,
-                    accessToken = accessToken
+                    accessToken = accessToken,
+                    userId = null,
+                    size = size
                 ).header("Location")
             } else {
-                SMHService.shared.getAlbumCoverUrl(
+                shared.getAlbumCoverUrl(
                     libraryId = libraryId,
                     spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                     size = size,
-                    accessToken = accessToken
+                    accessToken = accessToken,
+                    userId = null
                 ).header("Location")
             }
+        }
+    }
+
+    /**
+     * 查看历史版本列表
+     *
+     * @param dir 文件夹
+     * @param page 文件页码
+     * @param pageSize 一页的数据量
+     * @param orderType 排序方式
+     * @param orderDirection 排序方向
+     * @return 历史版本列表
+     */
+    @JvmOverloads
+    suspend fun listHistory(
+        name: String,
+        dir: Directory = rootDirectory,
+        page: Int,
+        pageSize: Int,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+    ): HistoryMediaContent {
+        return runWithBeaconReport("ListHistory", dir.path) { accessToken ->
+            val filePath = smhKey(dir.path, name)
+            shared.listHistory(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                filePath = filePath,
+                accessToken = accessToken,
+                userId = userSpace.userId,
+                page = page,
+                pageSize = pageSize,
+                orderBy = orderType,
+                orderByType = orderDirection
+            ).data
         }
     }
 
@@ -1628,11 +1807,12 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun deleteHistoryMedia(historyIds: List<Long>) {
 
         runWithBeaconReport("DeleteHistoryMedias", historyIds.getOrNull(0).toString()) { accessToken ->
-            SMHService.shared.deleteHistoryMedia(
+            shared.deleteHistoryMedia(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 historyIds = historyIds,
+                userId = null
             ).checkSuccess
         }
     }
@@ -1645,11 +1825,12 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun restoreHistoryMedia(historyId: Long): MediaContent {
         
         return runWithBeaconReport("RestoreHistoryMedias", historyId.toString()) { accessToken ->
-            SMHService.shared.restoreHistoryMedia(
+            shared.restoreHistoryMedia(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 historyId = historyId,
+                userId = null
             ).data.also { mediaContent ->
                 mediaContent.metaData = Utils.metaDataTrim(mediaContent.metaData)
             }
@@ -1663,7 +1844,7 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun getHistoryStatus(): HistoryStatus {
 
         return runWithBeaconReport("GetLibraryHistory", null) { accessToken ->
-            SMHService.shared.getHistoryStatus(
+            shared.getHistoryStatus(
                 libraryId = libraryId,
                 accessToken = accessToken).data
         }
@@ -1675,7 +1856,7 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun deleteDirectoryLocalSync(syncId: Int) {
 
         return runWithBeaconReport("DeleteDirectoryLocalSync", syncId.toString()) { accessToken ->
-            SMHService.shared.deleteDirectoryLocalSync(
+            shared.deleteDirectoryLocalSync(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 syncId = syncId,
@@ -1689,7 +1870,7 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun putDirectoryLocalSync(path: String, strategy: DirectoryLocalSyncStrategy, localPath: String): PutDirectoryLocalSyncResponseBody {
 
         return runWithBeaconReport("PutDirectoryLocalSync", path) { accessToken ->
-            SMHService.shared.putDirectoryLocalSync(
+            shared.putDirectoryLocalSync(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 body = PutDirectoryLocalSyncRequestBody(path, strategy, localPath),
@@ -1725,13 +1906,14 @@ class SMHCollection @JvmOverloads constructor(
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("CreateFileFromTemplate", filePath) { accessToken ->
             val metaData = meta?.mapKeys { "${X_SMH_META_KEY_PREFIX}${it.key}" }
-            SMHService.shared.createFileFromTemplate(
+            shared.createFileFromTemplate(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 filePath = filePath,
                 accessToken = accessToken,
                 metaData = metaData ?: emptyMap(),
-                request = request
+                request = request,
+                userId = null
             ).data
         }
     }
@@ -1759,14 +1941,13 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun officeEditFileCheck(name: String, dir: Directory = rootDirectory, lang: String = "zh-CN") {
         val filePath = smhKey(dir.path, name)
         return runWithBeaconReport("OfficeEditFileCheck", null) { accessToken ->
-            SMHService.shared.officeEditFileCheck(
+            shared.officeEditFileCheck(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 path = filePath,
                 userId = userSpace.userId,
                 accessToken = accessToken,
-            ).checkSuccess()
-        }
+            ).checkSuccess() }
     }
 
     /**
@@ -1776,7 +1957,7 @@ class SMHCollection @JvmOverloads constructor(
     suspend fun getSpaceFileCount(
     ): SpaceFileCount {
         return runWithBeaconReport("GetSpaceFileCount", null) { accessToken ->
-            SMHService.shared.getSpaceFileCount(
+            shared.getSpaceFileCount(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -1810,12 +1991,13 @@ class SMHCollection @JvmOverloads constructor(
         withFavoriteStatus: Boolean = false,
     ): RecentlyUsedFileContents {
         return runWithBeaconReport("RecentlyUsedFile", null) { accessToken ->
-            SMHService.shared.recentlyUsedFile(
+            shared.recentlyUsedFile(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
                 request = RecentlyUsedFileRequest(marker, limit, filterActionBy, type,
-                    withPath, withFavoriteStatus)
+                    withPath, withFavoriteStatus),
+                withInode = 0
             ).data
         }
     }
@@ -1828,7 +2010,7 @@ class SMHCollection @JvmOverloads constructor(
         inode: String
     ): INodeInfo {
         return runWithBeaconReport("GetINodeInfo", inode) { accessToken ->
-            SMHService.shared.getINodeInfo(
+            shared.getINodeInfo(
                 libraryId = libraryId,
                 spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
                 accessToken = accessToken,
@@ -1836,6 +2018,216 @@ class SMHCollection @JvmOverloads constructor(
             ).data
         }
     }
+
+    /**
+     * 更新目录自定义标签
+     * @param dirPath 目录路径
+     * @param updateDirectoryLabel 更新目录自定义标签的请求实体
+     */
+    suspend fun updateDirectoryLabels(dirPath: String, updateDirectoryLabel: UpdateDirectoryLabel)  {
+        return runWithBeaconReport("UpdateDirectoryLabels", dirPath) { accessToken ->
+            shared.updateDirectoryLabels(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                dirPath = dirPath,
+                body = updateDirectoryLabel
+            ).checkSuccess()
+        }
+    }
+
+    /**
+     * 更新文件的标签（Labels）或分类（Category）
+     * @param filePath 文件路径
+     * @param updateFileLabel 更新文件的标签（Labels）或分类（Category）的请求实体
+     */
+    suspend fun updateFileLabels(filePath: String, updateFileLabel: UpdateFileLabel)  {
+        return runWithBeaconReport("UpdateFileLabels", filePath) { accessToken ->
+            shared.updateFileLabels(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                filePath = filePath,
+                body = updateFileLabel
+            ).checkSuccess()
+        }
+    }
+
+    /**
+     * 获取回收站项目预览链接
+     * 可用于预览文档、图片、视频等多种文件类型；
+     * 预览文档类型的文件时，返回HTML或JPG格式的文档用于预览；
+     * 预览视频文件时，返回视频的首帧图片作为视频封面预览；
+     * 针对照片或视频封面，优先使用人脸识别智能缩放裁剪为 {Size}px × {Size}px 大小，如果未识别到人脸则居中缩放裁剪为 {Size}px × {Size}px 大小，如果未指定 {Size} 参数则使用照片或视频封面原图，最后 302 跳转到对应的图片的 URL；
+     * 可以直接在使用图片的参数中指定该 URL，例如小程序 <image> 标签、 HTML <img> 标签或小程序 wx.previewImage 接口等，该接口将自动 302 跳转到真实的图片 URL；
+     * 如果文件不属于可预览的文件类型，则会跳转至文件的下载链接；
+     * @param recycledItemId 回收站 ID
+     * @param type 文档类型文件的预览方式，可选参数，如果设置为"pic"则以JPG格式预览文档首页，否则以HTML格式预览文档
+     * @param size 图片或视频封面的缩放大小
+     * @param scale 图片或视频封面的等比例缩放百分比，可选参数，不传 Size 时生效
+     * @param widthSize 图片或视频封面的缩放宽度，不传高度时，高度按等比例缩放，不传 Size 和 Scale 时生效；
+     * @param heightSize 图片或视频封面的缩放高度，不传宽度时，宽度按等比例缩放，不传 Size 和 Scale 时生效；
+     * @param frameNumber gif文件的帧数，针对 gif 的降帧处理，仅在预览gif类型文件时生效
+     */
+    @JvmOverloads
+    suspend fun getRecycledPreviewUrl(
+        recycledItemId: String,
+        type: String? = null,
+        size: Int? = null,
+        scale: Int? = null,
+        widthSize: Int? = null,
+        heightSize: Int? = null,
+        frameNumber: Int? = null,
+    ): String {
+        return retryWhenTokenExpired { accessToken ->
+            "${baseUrl()}api/v1/recycled/${libraryId}/${userSpace.spaceId}/${recycledItemId}?preview&mobile"
+                .query("type", type)
+                .query("size", size)
+                .query("scale", scale)
+                .query("width_size", widthSize)
+                .query("height_size", heightSize)
+                .query("frame_number", frameNumber)
+                .query("access_token", accessToken)
+        }
+    }
+
+    /**
+     * 用于查看回收站文件详情
+     * @param recycledItemId 回收站项目 ID
+     */
+    suspend fun recycledItemInfo(
+        recycledItemId: String
+    ): RecycledItemInfo {
+        return runWithBeaconReport("RecycledItemInfo", recycledItemId) { accessToken ->
+            shared.recycledItemInfo(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                recycledItemId = recycledItemId
+            ).data
+        }
+    }
+
+    /**
+     * 收藏文件目录
+     * @param favoriteRequest 要收藏的项
+     */
+    suspend fun favorite(favoriteRequest: FavoriteRequest)  {
+        return runWithBeaconReport("Favorite", null) { accessToken ->
+            shared.favorite(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                body = favoriteRequest
+            ).checkSuccess()
+        }
+    }
+
+    /**
+     * 取消收藏
+     * @param favoriteRequest 要取消收藏的项
+     */
+    suspend fun unFavorite(favoriteRequest: FavoriteRequest)  {
+        return runWithBeaconReport("UnFavorite", null) { accessToken ->
+            shared.unFavorite(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                body = favoriteRequest
+            ).checkSuccess()
+        }
+    }
+
+    /**
+     * 查看指定空间收藏列表
+     * @param marker 用于顺序列出分页的标识，可选参数；
+     * @param limit 用于顺序列出分页时本地列出的项目数限制，默认为20，可选参数；
+     * @param page 分页码，默认第一页，可选参数，不能与 marker 和 limit 参数同时使用；
+     * @param pageSize 分页大小，默认 20，可选参数，不能与 marker 和 limit 参数同时使用；
+     * @param orderType 排序字段，按收藏时间排序为 favoriteTime（默认），目前仅支持按收藏时间排序，可选参数；
+     * @param orderDirection 排序方式，升序为 asc，降序为 desc（默认），可选参数；
+     * @param withPath 是否返回 path，返回为 true，不返回为 false（默认），可选参数；
+     */
+    @JvmOverloads
+    suspend fun favoriteList(
+        marker: String? = null,
+        limit: Int? = null,
+        page: Int? = null,
+        pageSize: Int? = null,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+        withPath: Boolean? = null,
+    ): FavoriteContents {
+        return runWithBeaconReport("FavoriteList", null) { accessToken ->
+            shared.favoriteList(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                marker = marker,
+                limit = limit,
+                page = page,
+                pageSize = pageSize,
+                orderBy = orderType,
+                orderByType = orderDirection,
+                withPath = withPath,
+            ).data
+        }
+    }
+
+    /**
+     * 租户空间限速
+     * @param spaceTrafficLimit 空间限速请求实体
+     */
+    suspend fun trafficLimit(spaceTrafficLimit: SpaceTrafficLimit)  {
+        return runWithBeaconReport("TrafficLimit", null) { accessToken ->
+            shared.trafficLimit(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                body = spaceTrafficLimit
+            ).checkSuccess()
+        }
+    }
+
+    /**
+     * 用于列出空间首页内容，会忽略目录的层级关系，列出空间下所有文件
+     * @param marker 用于顺序列出分页的标识，可选参数，翻页时传入此参数；
+     * @param limit 用于顺序列出分页时本地列出的项目数限制，可选参数；
+     * @param orderType 排序字段，按名称排序为 name（默认），按修改时间排序为 modificationTime，按文件大小排序为 size，按创建时间排序为 creationTime，按上传时间为uploadTime，按照文件对应的本地创建时间排序为 localCreationTime，按照文件对应的本地修改时间排序为 localModificationTime；
+     * @param orderDirection 排序方式，升序为 asc（默认），降序为 desc；
+     * @param filter 筛选方式，必选，onlyDir 只返回文件夹，onlyFile 只返回文件；
+     * @param withPath 是否返回 path，返回为 true，不返回为 false（默认），可选参数；
+     * @param userId 用户身份识别，当访问令牌对应的权限为管理员权限且申请访问令牌时的用户身份识别为空时用来临时指定用户身份，详情请参阅生成访问令牌接口，可选参数；
+     * @param category 文件自定义的分类,string类型,最大长度16字节， 可选，用户可通过更新文件接口修改文件的分类，也可以根据文件后缀预定义文件的分类信息;
+     */
+    @JvmOverloads
+    suspend fun contentsView(
+        filter: DirectoryFilter,
+        marker: String? = null,
+        limit: Int? = null,
+        orderType: OrderType? = null,
+        orderDirection: OrderDirection? = null,
+        withPath: Boolean? = null,
+        userId: String? = null,
+        category: String? = null,
+    ): ContentsView {
+        return runWithBeaconReport("ContentsView", null) { accessToken ->
+            shared.contentsView(
+                libraryId = libraryId,
+                spaceId = userSpace.spaceId ?: DEFAULT_SPACE_ID,
+                accessToken = accessToken,
+                marker = marker,
+                limit = limit,
+                orderBy = orderType,
+                orderByType = orderDirection,
+                filter = filter,
+                withPath = withPath,
+                userId = userId,
+                category = category,
+            ).data
+        }
+    }
+
 
     @Throws
     fun <T1: SMHRequest, T2: SMHResult> buildHttpRequest(request: T1, result: T2): QCloudHttpRequest<T2> {
@@ -1847,6 +2239,7 @@ class SMHCollection @JvmOverloads constructor(
         if (url != null) {
             httpRequestBuilder.url(URL(url))
         } else {
+            httpRequestBuilder.scheme(getProtocol())
             httpRequestBuilder.host(request.httpHost)
             httpRequestBuilder.path(request.httpPath)
             httpRequestBuilder.query(request.httpQueries)
@@ -1954,6 +2347,54 @@ class SMHCollection @JvmOverloads constructor(
             throw exception
         }
     }
+
+    private suspend fun queryTaskPolling(response: BatchResponse): BatchResponse{
+        if(response.taskId == null) {
+            return response
+        }
+
+        if(!hasRunning(response)) {
+            return response
+        }
+
+        var result: BatchResponse = response
+        var hasRunning = true
+        while (hasRunning) {
+            // 每3秒轮询一次
+            delay(3000)
+            val batchResponses: List<BatchResponse> = queryTasks(listOf(response.taskId))
+            hasRunning = if(batchResponses.size != 1){
+                false
+            } else {
+                result = batchResponses[0]
+                hasRunning(result)
+            }
+        }
+        return result
+    }
+
+    enum class TaskStatus {
+        SUCCESS,
+        FAILED,
+        RUNNING
+    }
+
+    private fun hasRunning(response: BatchResponse): Boolean{
+        if(response.result.isNullOrEmpty()) {
+            return true
+        }
+        // 判断response.result每一项的status是否有RUNNING
+        return response.result!!.any { getTaskStatus(it) == TaskStatus.RUNNING }
+    }
+
+    private fun getTaskStatus(batchResponseItem: BatchResponseItem): TaskStatus {
+        return when(batchResponseItem.status) {
+            202 -> TaskStatus.RUNNING
+            200, 204 -> TaskStatus.SUCCESS
+            // 207,500
+            else -> TaskStatus.FAILED
+        }
+    }
 }
 
 fun SMHException.isTokenExpiredException(): Boolean {
@@ -1981,7 +2422,5 @@ fun SMHException.isTokenExpiredException(): Boolean {
              params["sdk_version_code"] = BuildConfig.SMH_VERSION_CODE.toString()
              QCloudTrackService.getInstance()
                  .reportSimpleData(Constants.SIMPLE_DATA_EVENT_CODE_START, params)
-         } catch (e: Exception) {
-             e.printStackTrace()
-         }
+         } catch (_: Exception) {  }
      }

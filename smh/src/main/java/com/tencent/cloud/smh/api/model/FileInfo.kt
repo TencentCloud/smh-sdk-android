@@ -24,6 +24,10 @@ package com.tencent.cloud.smh.api.model
  * @property type 文件类型
  * @property cosUrl 文件下载路径
  * @property linkTo 源文件，但文件类型为软链接时有效
+ * @property labels 文件标签列表
+ * @property category 文件分类
+ * @property localCreationTime 本地创建时间
+ * @property localModificationTime 本地修改时间
  */
 data class FileInfo(
     @JvmField val cosUrl: String,
@@ -39,7 +43,11 @@ data class FileInfo(
     @JvmField val previewAsIcon: Boolean?,
     @JvmField val previewByCI: Boolean,
     @JvmField val previewByDoc: Boolean,
-    @JvmField val linkTo: List<String>?
+    @JvmField val linkTo: List<String>?,
+    @JvmField val labels: List<String>? = null,
+    @JvmField val category: String? = null,
+    @JvmField val localCreationTime: String? = null,
+    @JvmField val localModificationTime: String? = null
 ) {
     val linkPath: String?
         get() = linkTo?.joinToString(separator = "/")
@@ -59,7 +67,7 @@ data class DirectoryInfo(
     @JvmField val crc64: String?,
     @JvmField val versionId: String?,
     @JvmField val historySize: Long?,
-    @JvmField var metaData: Map<String, String>,
+    @JvmField var metaData: Map<String, String>?,
     @JvmField val previewAsIcon: Boolean?,
     @JvmField val previewByCI: Boolean?,
     @JvmField val previewByDoc: Boolean,
@@ -68,6 +76,12 @@ data class DirectoryInfo(
     @JvmField val authorityButtonList: MediaAuthorityButton?,
     @JvmField val isAuthorized: Boolean?,
     @JvmField val tagList: List<FileTag>?,
+    @JvmField val inode: String? = null,
+    @JvmField val isFavorite: Boolean? = null,
+    @JvmField val labels: List<String>? = null,
+    @JvmField val category: String? = null,
+    @JvmField val localCreationTime: String? = null,
+    @JvmField val localModificationTime: String? = null
 ){
     data class FileTag(
         val id: Int,

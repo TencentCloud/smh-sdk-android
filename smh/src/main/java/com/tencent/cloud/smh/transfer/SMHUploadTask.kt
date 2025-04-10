@@ -1,13 +1,11 @@
 package com.tencent.cloud.smh.transfer
 
 import android.content.Context
-import android.util.Log
 import bolts.CancellationTokenSource
 import com.google.gson.Gson
 import com.tencent.cloud.smh.ClientIOException
 import com.tencent.cloud.smh.ClientInternalException
 import com.tencent.cloud.smh.ClientManualCancelException
-import com.tencent.cloud.smh.FileCRC64InConsistException
 import com.tencent.cloud.smh.FileNotFoundException
 import com.tencent.cloud.smh.InvalidArgumentException
 import com.tencent.cloud.smh.SMHClientException
@@ -19,7 +17,7 @@ import com.tencent.cloud.smh.api.model.InitUpload
 import com.tencent.cloud.smh.api.model.MultiUploadMetadata
 import com.tencent.cloud.smh.api.model.PartsHeaders
 import com.tencent.cloud.smh.api.model.PublicMultiUploadMetadata
-import com.tencent.cloud.smh.api.model.QuickUpload
+import com.tencent.cloud.smh.api.model.UploadRequestBody
 import com.tencent.cloud.smh.api.model.UploadPart
 import com.tencent.cloud.smh.ext.getLastModified
 import com.tencent.cloud.smh.ext.getSize
@@ -46,18 +44,13 @@ import java.io.InputStream
 import java.util.Collections
 import java.util.LinkedList
 import java.util.TreeSet
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 import kotlin.math.ceil
-import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -120,21 +113,15 @@ open class SMHUploadTask(
         frozenManual = false
     }
 
-    fun pause(force: Boolean): Boolean {
+    fun pause(force: Boolean? = false): Boolean {
         if (taskState != SMHTransferState.RUNNING && taskState != SMHTransferState.WAITING) {
             QCloudLogger.i(TAG, "[%s]: cannot pause upload task in state %s", taskId, taskState)
             return false
         }
-        if (frozenManual && !force) {
-            QCloudLogger.i(
-                TAG,
-                "[%s]: cannot pause upload task, frozenManual:%b, force: %b",
-                taskId,
-                frozenManual,
-                frozenManual
-            )
-            return false
-        }
+//        if (frozenManual && !force) {
+//            QCloudLogger.i(TAG, "[%s]: cannot pause upload task, frozenManual:%b, force: %b", taskId, frozenManual, frozenManual)
+//            return false
+//        }
         if(!requestStreamCanReuse()){
             QCloudLogger.i(TAG, "[%s]: cannot pause upload task in inputStream not support reset", taskId)
             return false
@@ -168,9 +155,7 @@ open class SMHUploadTask(
     }
 
     suspend fun cancel(force: Boolean) {
-        if (frozenManual && !force) {
-            return
-        }
+        if (frozenManual && !force) { return }
 
         if(!requestStreamCanReuse()){
             QCloudLogger.i(TAG, "[%s]: cannot cancel upload task in inputStream not support reset", taskId)
@@ -254,7 +239,14 @@ open class SMHUploadTask(
                 //如果流不能复用则服务端不校验crc64  crc64传空
                 if (requestStreamCanReuse()) { getLocalCRC64() } else { null }
             }
-            val confirmUpload = transferApiProxy.confirmUpload(executeConfirmKey, localCRC64)
+            val confirmUpload = transferApiProxy.confirmUpload(
+                executeConfirmKey,
+                localCRC64,
+                labels = uploadFileRequest.labels,
+                category = uploadFileRequest.category,
+                localCreationTime = uploadFileRequest.localCreationTime,
+                localModificationTime = uploadFileRequest.localModificationTime,
+            )
             QCloudLogger.i(TAG, "[%s]: complete upload with default", taskId)
             UploadFileResult.fromConfirmUpload(confirmUpload)
         }
@@ -274,7 +266,7 @@ open class SMHUploadTask(
     @Throws(SMHClientException::class, SMHException::class)
     private suspend fun multipartUpload(): String {
         QCloudLogger.i(TAG, "[%s]: start upload with multipart upload", taskId)
-        if(SMHService.isPrivate) {
+        if(smhCollection.isPrivate) {
             val uploadTask = MultipartUploadTask(
                 transferApiProxy,
                 uploadFileRequest,
@@ -512,9 +504,17 @@ open class SMHUploadTask(
             val beginningHashString = StringUtils.toHexString(beginningHash)
             val beginningQuickResult = apiDirect.quickUpload(
                 uploadFileRequest.key,
-                QuickUpload(totalUploadSize, beginningHashString),
+                UploadRequestBody(
+                    totalUploadSize,
+                    beginningHashString,
+                    labels = uploadFileRequest.labels,
+                    category = uploadFileRequest.category,
+                    localCreationTime = uploadFileRequest.localCreationTime,
+                    localModificationTime = uploadFileRequest.localModificationTime,
+                ),
                 uploadFileRequest.conflictStrategy,
-                uploadFileRequest.meta
+                uploadFileRequest.meta,
+                filesize = totalUploadSize,
             )
             QCloudLogger.i(TAG, "[%s]: quick upload, full hash", taskId)
             return if (beginningQuickResult.statusCode == 202) {
@@ -549,9 +549,18 @@ open class SMHUploadTask(
                 val fullHashString = StringUtils.toHexString(fullHash)
                 val fullQuickResult = apiDirect.quickUpload(
                     uploadFileRequest.key,
-                    QuickUpload(totalUploadSize, beginningHashString, fullHashString),
+                    UploadRequestBody(
+                        totalUploadSize,
+                        beginningHashString,
+                        fullHashString,
+                        labels = uploadFileRequest.labels,
+                        category = uploadFileRequest.category,
+                        localCreationTime = uploadFileRequest.localCreationTime,
+                        localModificationTime = uploadFileRequest.localModificationTime,
+                    ),
                     uploadFileRequest.conflictStrategy,
-                    uploadFileRequest.meta
+                    uploadFileRequest.meta,
+                    filesize = totalUploadSize,
                 )
                 if (fullQuickResult.statusCode == 200) {
                     closeInputStream(inputStream)
@@ -628,16 +637,12 @@ open class SMHUploadTask(
 
         public override fun cancel() {
             cts.cancel()
-            requestReference.get()?.let {
-                apiDirect.cancel(it)
-            }
+            requestReference.get()?.let { apiDirect.cancel(it) }
         }
 
         suspend fun abortUpload() {
             val confirmKey = confirmKeyReference?.get()
-            confirmKey?.let {
-                apiDirect.abortMultiUpload(it)
-            }
+            confirmKey?.let { apiDirect.abortMultiUpload(it) }
         }
 
 
@@ -646,7 +651,13 @@ open class SMHUploadTask(
                 smhKey = uploadFileRequest.key,
                 meta = uploadFileRequest.meta,
                 conflictStrategy = uploadFileRequest.conflictStrategy,
-                filesize = totalUploadSize
+                filesize = totalUploadSize,
+                uploadRequestBody = UploadRequestBody(
+                    labels = uploadFileRequest.labels,
+                    category = uploadFileRequest.category,
+                    localCreationTime = uploadFileRequest.localCreationTime,
+                    localModificationTime = uploadFileRequest.localModificationTime,
+                )
             )
         }
 
@@ -758,9 +769,6 @@ open class SMHUploadTask(
                     uploadFileRequest.inputStream != null -> {
                         uploadInputStream(initUpload)
                     }
-                    else -> {
-                        throw InvalidArgumentException
-                    }
                 }
             }
 
@@ -792,7 +800,13 @@ open class SMHUploadTask(
                 smhKey = uploadFileRequest.key,
                 meta = uploadFileRequest.meta,
                 conflictStrategy = uploadFileRequest.conflictStrategy,
-                filesize = totalUploadSize
+                filesize = totalUploadSize,
+                uploadRequestBody = UploadRequestBody(
+                    labels = uploadFileRequest.labels,
+                    category = uploadFileRequest.category,
+                    localCreationTime = uploadFileRequest.localCreationTime,
+                    localModificationTime = uploadFileRequest.localModificationTime,
+                )
             )
         }
 
@@ -912,9 +926,7 @@ open class SMHUploadTask(
                                         uploader = this
                                     }
                                 } catch (e: SMHException){
-                                    synchronized(syncUploadPart) {
-                                        cont.resumeWithExceptionIfActive(e)
-                                    }
+                                    synchronized(syncUploadPart) { cont.resumeWithExceptionIfActive(e) }
                                 }
                                 uploader
                             }
@@ -924,12 +936,7 @@ open class SMHUploadTask(
                         }
                     }
                 } catch (exception: Exception) {
-                    QCloudLogger.w(
-                        TAG,
-                        "[%s]: upload parts encounter exception: %s",
-                        taskId,
-                        exception.message
-                    )
+                    QCloudLogger.w(TAG, "[%s]: upload parts encounter exception: %s", taskId, exception.message)
                     cont.resumeWithExceptionIfActive(ClientInternalException(exception.message))
                 }
             }
@@ -988,12 +995,7 @@ open class SMHUploadTask(
                     partNumberPointer++
                 }
             } catch (exception: Exception) {
-                QCloudLogger.w(
-                    TAG,
-                    "[%s]: upload parts encounter exception: %s",
-                    taskId,
-                    exception.message
-                )
+                QCloudLogger.w(TAG, "[%s]: upload parts encounter exception: %s", taskId, exception.message)
                 throw ClientInternalException(exception.message)
             }
         }
@@ -1052,12 +1054,7 @@ open class SMHUploadTask(
                     fileOffsetPointer += partSize
                 }
             } catch (exception: IOException) {
-                QCloudLogger.w(
-                    TAG,
-                    "[%s]: check parts encounter exception: %s",
-                    taskId,
-                    exception.message
-                )
+                QCloudLogger.w(TAG, "[%s]: check parts encounter exception: %s", taskId, exception.message)
                 throw ClientInternalException(exception.message)
             } finally {
                 //只有uri上传才关闭流，流数据上传不关闭，因为剩余分片上传需要继续用这个流对象
@@ -1172,9 +1169,6 @@ open class SMHUploadTask(
                     }
                     uploadFileRequest.inputStream != null -> {
                         uploadInputStream(initUpload!!)
-                    }
-                    else -> {
-                        throw InvalidArgumentException
                     }
                 }
             }
@@ -1410,19 +1404,10 @@ open class SMHUploadTask(
                                         val partMap = mutableMapOf<String, PartsHeaders>()
                                         partMap.putAll(uploader.parts)
                                         partMap.putAll(this.parts)
-                                        uploader = InitMultipartUpload(
-                                            domain = this.domain,
-                                            path = this.path,
-                                            uploadId = this.uploadId,
-                                            confirmKey = this.confirmKey,
-                                            expiration = this.expiration,
-                                            parts = partMap
-                                        )
+                                        uploader = InitMultipartUpload(domain = this.domain, path = this.path, uploadId = this.uploadId, confirmKey = this.confirmKey, expiration = this.expiration, parts = partMap)
                                     }
                                 } catch (e: SMHException){
-                                    synchronized(syncUploadPart) {
-                                        cont.resumeWithExceptionIfActive(e)
-                                    }
+                                    synchronized(syncUploadPart) { cont.resumeWithExceptionIfActive(e) }
                                 }
                                 uploader
                             }
@@ -1486,14 +1471,7 @@ open class SMHUploadTask(
                                 val partMap = mutableMapOf<String, PartsHeaders>()
                                 partMap.putAll(uploader.parts)
                                 partMap.putAll(this.parts)
-                                uploader = InitMultipartUpload(
-                                    domain = this.domain,
-                                    path = this.path,
-                                    uploadId = this.uploadId,
-                                    confirmKey = this.confirmKey,
-                                    expiration = this.expiration,
-                                    parts = partMap
-                                )
+                                uploader = InitMultipartUpload(domain = this.domain, path = this.path, uploadId = this.uploadId, confirmKey = this.confirmKey, expiration = this.expiration, parts = partMap)
                             }
                             uploader
                         }
@@ -1511,12 +1489,7 @@ open class SMHUploadTask(
                     partNumberPointer++
                 }
             } catch (exception: Exception) {
-                QCloudLogger.w(
-                    TAG,
-                    "[%s]: upload parts encounter exception: %s",
-                    taskId,
-                    exception.message
-                )
+                QCloudLogger.w(TAG, "[%s]: upload parts encounter exception: %s", taskId, exception.message)
                 throw ClientInternalException(exception.message)
             }
         }
@@ -1582,12 +1555,7 @@ open class SMHUploadTask(
                     fileOffsetPointer += partSize
                 }
             } catch (exception: IOException) {
-                QCloudLogger.w(
-                    TAG,
-                    "[%s]: check parts encounter exception: %s",
-                    taskId,
-                    exception.message
-                )
+                QCloudLogger.w(TAG, "[%s]: check parts encounter exception: %s", taskId, exception.message)
                 throw ClientInternalException(exception.message)
             } finally {
                 //只有uri上传才关闭流，流数据上传不关闭，因为剩余分片上传需要继续用这个流对象

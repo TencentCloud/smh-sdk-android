@@ -51,14 +51,14 @@ abstract class SMHTransferTask(val context: Context,
                                transferRequest: SMHTransferRequest) {
 
     protected var transferApiProxy: TransferApiProxy
-    protected var smhProgressListener: SMHProgressListener? = null
-    protected var smhStateListener: SMHStateListener? = null
-    protected var smhResultListener: SMHResultListener? = null
+    private var smhProgressListener: SMHProgressListener? = null
+    private var smhStateListener: SMHStateListener? = null
+    private var smhResultListener: SMHResultListener? = null
 
     @Volatile var taskState = SMHTransferState.WAITING
 
-    var transferRequest: SMHTransferRequest
-    var transferResult: SMHTransferResult? = null
+    private var transferRequest: SMHTransferRequest
+    private var transferResult: SMHTransferResult? = null
     protected var taskId: String
 
     var verifyContent = true
@@ -82,17 +82,15 @@ abstract class SMHTransferTask(val context: Context,
         cosService(context = context) {
             configuration {
                 setRegion("ap-guangzhou") // 一个有效值即可
-                isHttps(SMHService.isHttps())
+                isHttps(smhCollection.isHttps())
                 setDebuggable(smhCollection.isDebuggable)
                 setDomainSwitch(false)
             }
         }, smhCollection)
 
     private val TAG: String
-    var mServerException: SMHException? = null
-        protected set
-    var mClientException: SMHClientException? = null
-        protected set
+    private var mServerException: SMHException? = null
+    private var mClientException: SMHClientException? = null
     protected var smhKey: String
     // 内部异常是否已经重试
     private var internalExceptionRetry = false
@@ -133,20 +131,20 @@ abstract class SMHTransferTask(val context: Context,
         cts = CancellationTokenSource()
     }
 
-    fun setExecutor(executor: Executor) {
-        mExecutor = executor
-    }
+//    fun setExecutor(executor: Executor) {
+//        mExecutor = executor
+//    }
 
     protected abstract fun tag(): String
 
     private fun getTrackEventCode(): String? {
-        return if (this is SMHUploadTask) {
-            UploadEventCode
+        var trackEventCode: String? = null
+        if (this is SMHUploadTask) {
+            trackEventCode = UploadEventCode
         } else if (this is SMHDownloadTask) {
-            DownloadEventCode
-        } else {
-            null
+            trackEventCode = DownloadEventCode
         }
+        return trackEventCode
     }
 
     private fun getLocalUri(transferRequest: SMHTransferRequest): String? {
@@ -219,15 +217,8 @@ abstract class SMHTransferTask(val context: Context,
                 }
 
         } catch (exception: CosXmlServiceException) {
-            exception.printStackTrace()
             QCloudLogger.e(tag(), "transfer with CosXmlServiceException: code ${exception.errorCode}, message is ${exception.errorMessage}, requestId is ${exception.requestId}")
-            mServerException = SMHException(
-                errorCode = exception.errorCode,
-                errorMessage = exception.errorMessage,
-                requestId = exception.requestId?: "",
-                statusCode = exception.statusCode,
-                message = exception.message?: ""
-            )
+            mServerException = SMHException(errorCode = exception.errorCode, errorMessage = exception.errorMessage, requestId = exception.requestId?: "", statusCode = exception.statusCode, message = exception.message?: "")
         } catch (exception: Exception) {
             exception.printStackTrace()
             QCloudLogger.e(tag(), "transfer with Exception: message is ${exception.message}, stackTrace is ${exception.stackTrace}")
@@ -380,31 +371,31 @@ abstract class SMHTransferTask(val context: Context,
         smhResultListener?.onFailure(transferRequest, smhException, clientException)
     }
 
-    @Throws(SMHClientException::class, SMHException::class)
-    protected fun throwException(e: Exception?) {
-        if (e is SMHClientException) {
-            throw (e as SMHClientException?)!!
-        } else if (e is SMHException) {
-            throw (e as SMHException?)!!
-        } else if (e != null) {
-            throw ClientInternalException(e.message)
-        } else {
-            throw ClientInternalException("smh sdk encounter unknown error")
-        }
-    }
-
-    protected class TaskThreadFactory internal constructor(
-        private val tag: String,
-        private val priority: Int
-    ) : ThreadFactory {
-        private val increment = AtomicInteger(1)
-        override fun newThread(runnable: Runnable): Thread {
-            val newThread = Thread(runnable, tag + increment.getAndIncrement())
-            newThread.isDaemon = false
-            newThread.priority = priority
-            return newThread
-        }
-    }
+//    @Throws(SMHClientException::class, SMHException::class)
+//    protected fun throwException(e: Exception?) {
+//        if (e is SMHClientException) {
+//            throw (e as SMHClientException?)!!
+//        } else if (e is SMHException) {
+//            throw (e as SMHException?)!!
+//        } else if (e != null) {
+//            throw ClientInternalException(e.message)
+//        } else {
+//            throw ClientInternalException("smh sdk encounter unknown error")
+//        }
+//    }
+//
+//    protected class TaskThreadFactory internal constructor(
+//        private val tag: String,
+//        private val priority: Int
+//    ) : ThreadFactory {
+//        private val increment = AtomicInteger(1)
+//        override fun newThread(runnable: Runnable): Thread {
+//            val newThread = Thread(runnable, tag + increment.getAndIncrement())
+//            newThread.isDaemon = false
+//            newThread.priority = priority
+//            return newThread
+//        }
+//    }
 
 
 }

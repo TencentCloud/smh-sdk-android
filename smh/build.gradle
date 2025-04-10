@@ -39,8 +39,8 @@ repositories {
     }
 }
 
-def smhVersionName = "1.2.33"
-def smhVersionCode = 10233
+def smhVersionName = "1.2.36"
+def smhVersionCode = 10236
 
 android {
     compileSdkVersion 29

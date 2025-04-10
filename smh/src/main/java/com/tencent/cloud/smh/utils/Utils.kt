@@ -35,5 +35,18 @@ class Utils {
                 .mapKeys { it.key.substring(X_SMH_META_KEY_PREFIX.length) }
                 .mapValues { it.value.first() }
         }
+
+        fun baseUrl(host: String): String {
+            return if(host.startsWith("http://", true) ||
+                host.startsWith("https://", true)){
+                return if(host.endsWith("/")){
+                    host
+                } else {
+                    "${host}/"
+                }
+            } else {
+                "https://${host}/"
+            }
+        }
     }
 }

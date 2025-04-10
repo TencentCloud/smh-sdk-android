@@ -28,17 +28,17 @@ sealed class SMHResult<out T> {
     object Loading : SMHResult<Nothing>()
 }
 
-fun <T> SMHResult<T>.isSuccess(): Boolean {
-    return this is SMHResult.Success
-}
-
-fun <T> SMHResult<T>.isFailure(): Boolean {
-    return this is SMHResult.Failure
-}
-
-fun <T> SMHResult<T>.error(): Throwable? {
-    return (this as? SMHResult.Failure)?.e
-}
+//fun <T> SMHResult<T>.isSuccess(): Boolean {
+//    return this is SMHResult.Success
+//}
+//
+//fun <T> SMHResult<T>.isFailure(): Boolean {
+//    return this is SMHResult.Failure
+//}
+//
+//fun <T> SMHResult<T>.error(): Throwable? {
+//    return (this as? SMHResult.Failure)?.e
+//}
 
 val <T> SMHResult<T>.dataOrNull: T?
     get() = (this as? SMHResult.Success)?.data

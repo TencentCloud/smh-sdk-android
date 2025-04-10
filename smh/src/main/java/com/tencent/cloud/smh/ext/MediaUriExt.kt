@@ -75,20 +75,14 @@ suspend fun Uri.getLastModified(context: Context): Long? {
                 MediaStore.MediaColumns.DATE_MODIFIED,
             )
             val cursor = context.contentResolver.query(this, columns, null, null, null)
-            date = try {
+            try {
                 if (cursor != null && cursor.moveToFirst()) {
                     val dateModified = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
                     if (dateModified != -1) {
-                        cursor.getLong(dateModified) * MILLISECOND
-                    } else {
-                        null
+                        date = cursor.getLong(dateModified) * MILLISECOND
                     }
-                } else {
-                    null
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
+            } catch (_: Exception) {
             } finally {
                 cursor?.close()
             }
@@ -154,8 +148,7 @@ private fun Uri.getVideoMetaDate(context: Context): Long? {
             metaDate = metaDate.replace("Z", " UTC") // 注意是空格+UTC
             val format = SimpleDateFormat("yyyyMMdd'T'HHmmss.SSS Z", Locale.getDefault())
             return format.parse(metaDate)?.time
-        } catch (e: Exception) {
-        }
+        } catch (_: Exception) { }
         return null
     } catch (ignored: Exception) {
         null
@@ -167,7 +160,7 @@ private fun Uri.getVideoMetaDate(context: Context): Long? {
 /**
  * 把 URI 转成路径
  */
-private suspend fun Uri.getOriginalPath(context: Context): String? {
+suspend fun Uri.getOriginalPath(context: Context): String? {
     return withContext(Dispatchers.IO) {
         // DocumentProvider
         if (DocumentsContract.isDocumentUri(context, this@getOriginalPath)) {
@@ -192,8 +185,7 @@ private suspend fun Uri.getOriginalPath(context: Context): String? {
                         Uri.parse("content://downloads/public_downloads"), id
                     )
                     return@withContext getDataColumn(context, contentUri, null, null)
-                } catch (_: NumberFormatException) {
-                }
+                } catch (_: NumberFormatException) { }
             } else if (this@getOriginalPath.isMediaDocument()) {
                 val docId: String = DocumentsContract.getDocumentId(this@getOriginalPath)
                 val split = docId.split(":").toTypedArray()

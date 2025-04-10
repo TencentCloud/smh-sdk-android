@@ -22,6 +22,11 @@ import kotlinx.android.parcel.Parcelize
  * @property maxFileSize 搜索文件大小范围，单位 Byte
  * @property modificationTimeStart 搜索更新时间范围，时间戳字符串，与时区无关
  * @property modificationTimeEnd 搜索更新时间范围，时间戳字符串，与时区无关
+ * @property orderBy 排序字段，可选参数，当前支持按名称、修改时间、文件大小、创建时间排序具体类型如下：
+ * @property orderByType 排序方式，升序为 asc，降序为 desc，可选参数。
+ * @property searchMode 搜索方式，快速为 fast，普通为 normal，可选参数，默认 normal。
+ * @property labels 简易文件标签
+ * @property categories 文件自定义分类信息
  */
 data class InitSearchMedia(
     val type: List<SearchType>,
@@ -36,11 +41,14 @@ data class InitSearchMedia(
     val modificationTimeEnd: String? = null,
     val orderBy: OrderType? = null,
     val orderByType: OrderDirection? = null,
+    val searchMode: String? = null,
+    val labels: List<String>? = null,
+    val categories: List<String>? = null,
 ) {
     fun signature(): String {
         return "$scope/$keyword/${type.joinToString(",")}/${tags?.joinToString(",")}/" +
                 "${extname?.joinToString(",")}/${creators?.joinToString(",")}/" +
-                "$minFileSize/$maxFileSize/$modificationTimeStart/$modificationTimeEnd/$orderBy/$orderByType"
+                "$minFileSize/$maxFileSize/$modificationTimeStart/$modificationTimeEnd/$orderBy/$orderByType/$searchMode/${labels?.joinToString(",")}/${categories?.joinToString(",")}"
     }
 }
 
@@ -70,6 +78,7 @@ data class SearchPartContent(
 
     val searchId: String,
     val hasMore: Boolean?,
+    val searchFinished: Boolean?,
     val nextMarker: Long?,
     val contents: List<SearchItem>
 )
@@ -99,6 +108,10 @@ data class SearchItem(
     val userOrgId: String? = null,
     val inode: String? = null,
     val isFavorite: Boolean? = null,
+    val labels: List<String>? = null,
+    val category: String? = null,
+    val localCreationTime: String? = null,
+    val localModificationTime: String? = null
 )
 
 enum class SearchType {

@@ -37,18 +37,18 @@ class COSServiceBuilder(val context: Context) {
         cosXmlConfig = builder.builder()
     }
 
-    fun credentialProvider(callback: () -> QCloudCredentialProvider) {
-        cp = callback()
-    }
-
-    fun lifecycleCredentialProvider(callback: () -> QCloudLifecycleCredentials):
-            QCloudCredentialProvider {
-        return object : BasicLifecycleCredentialProvider() {
-            override fun fetchNewCredentials(): QCloudLifecycleCredentials {
-                return callback()
-            }
-        }
-    }
+//    fun credentialProvider(callback: () -> QCloudCredentialProvider) {
+//        cp = callback()
+//    }
+//
+//    fun lifecycleCredentialProvider(callback: () -> QCloudLifecycleCredentials):
+//            QCloudCredentialProvider {
+//        return object : BasicLifecycleCredentialProvider() {
+//            override fun fetchNewCredentials(): QCloudLifecycleCredentials {
+//                return callback()
+//            }
+//        }
+//    }
 }
 
 fun cosService(context: Context, init: COSServiceBuilder.() -> Unit): CosXmlBaseService {
@@ -64,9 +64,7 @@ fun cosService(context: Context, init: COSServiceBuilder.() -> Unit): CosXmlBase
 }
 
 suspend inline fun <T> suspendBlock(crossinline block: (listener: CosXmlResultListener) -> Unit): T where T : CosXmlResult {
-    return suspendCancellableCoroutine<T> { cont ->
-        block(cosXmlListenerWrapper(cont))
-    }
+    return suspendCancellableCoroutine<T> { cont -> block(cosXmlListenerWrapper(cont)) }
 }
 
 
@@ -76,9 +74,7 @@ fun <T> cosXmlListenerWrapper(cont: Continuation<T>): CosXmlResultListener where
             cont.resumeIfActive(p1 as T)
         }
 
-        override fun onFail(p0: CosXmlRequest?, p1: CosXmlClientException?, p2: CosXmlServiceException?) {
-            cont.resumeWithExceptionIfActive(p1 ?: p2!!)
-        }
+        override fun onFail(p0: CosXmlRequest?, p1: CosXmlClientException?, p2: CosXmlServiceException?) { cont.resumeWithExceptionIfActive(p1 ?: p2!!) }
     }
 }
 

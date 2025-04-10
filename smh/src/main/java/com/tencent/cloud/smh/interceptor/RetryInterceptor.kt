@@ -17,7 +17,7 @@ class RetryInterceptor: Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
 
         val request = chain.request()
-        val retryStrategy = RetryStrategy(3)
+        val retryStrategy = RetryStrategy(mMaxCount = 3)
         var count = 0
 
         while (true) {

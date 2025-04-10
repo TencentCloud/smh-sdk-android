@@ -26,7 +26,16 @@ enum class OrderType {
     FAVORITE_TIME,
 
     @SerializedName("visitTime")
-    VISIT_TIME
+    VISIT_TIME,
+
+    @SerializedName("uploadTime")
+    UPLOAD_TIME,
+
+    @SerializedName("localCreationTime")
+    LOCAL_CREATION_TIME,
+
+    @SerializedName("localModificationTime")
+    LOCAL_MODIFICATION_TIME,
 }
 
 enum class OrderDirection{

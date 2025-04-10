@@ -1,11 +1,8 @@
 package com.tencent.cloud.smh.transfer
 
-import android.content.Context
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.util.Log
 import com.tencent.cloud.smh.InvalidArgumentException
-import com.tencent.cloud.smh.SMHClientException
 import com.tencent.cloud.smh.SMHCollection
 import com.tencent.cloud.smh.api.SMHService
 import com.tencent.cloud.smh.api.model.ConfirmUpload
@@ -15,12 +12,10 @@ import com.tencent.cloud.smh.api.model.InitMultipartUpload
 import com.tencent.cloud.smh.api.model.InitUpload
 import com.tencent.cloud.smh.api.model.MultiUploadMetadata
 import com.tencent.cloud.smh.api.model.PublicMultiUploadMetadata
-import com.tencent.cloud.smh.api.model.QuickUpload
+import com.tencent.cloud.smh.api.model.UploadRequestBody
 import com.tencent.cloud.smh.api.model.RawResponse
-import com.tencent.cloud.smh.ext.cosXmlListenerWrapper
 import com.tencent.cloud.smh.ext.runWithSuspend
 import com.tencent.cloud.smh.ext.suspendBlock
-import com.tencent.cloud.smh.ext.utc2normalTimeMillis
 import com.tencent.cos.xml.CosXmlBaseService
 import com.tencent.cos.xml.exception.CosXmlClientException
 import com.tencent.cos.xml.exception.CosXmlServiceException
@@ -34,20 +29,15 @@ import com.tencent.cos.xml.model.`object`.GetObjectRequest
 import com.tencent.cos.xml.model.`object`.GetObjectResult
 import com.tencent.cos.xml.model.`object`.UploadPartRequest
 import com.tencent.cos.xml.model.`object`.UploadPartResult
-import com.tencent.qcloud.core.common.QCloudTaskStateListener
 import com.tencent.qcloud.core.http.HttpTask
 import com.tencent.qcloud.core.task.QCloudTask
 import com.tencent.qcloud.core.task.TaskExecutors
 import com.tencent.qcloud.core.task.TaskManager
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.InputStream
-import java.lang.Exception
 import java.net.URL
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.coroutines.resume
-import kotlin.jvm.Throws
 
 /**
  * <p>
@@ -60,22 +50,25 @@ class TransferApiProxy(
 ) {
     suspend fun quickUpload(
         name: String,
-        quickUpload: QuickUpload,
+        uploadRequestBody: UploadRequestBody,
         conflictStrategy: ConflictStrategy? = null,
-        meta: Map<String, String>? = null
+        meta: Map<String, String>? = null,
+        filesize: Long? = null
     ): RawResponse = smhCollection.quickUpload(
         name = name,
-        quickUpload = quickUpload,
+        uploadRequestBody = uploadRequestBody,
         conflictStrategy = conflictStrategy,
-        meta = meta
+        meta = meta,
+        filesize = filesize
     )
 
-    suspend fun initUpload(smhKey: String, meta: Map<String, String>? = null, conflictStrategy: ConflictStrategy? = null, filesize: Long? = null): InitUpload {
+    suspend fun initUpload(smhKey: String, meta: Map<String, String>? = null, conflictStrategy: ConflictStrategy? = null, filesize: Long? = null, uploadRequestBody: UploadRequestBody? = null): InitUpload {
         return smhCollection.initUpload(
             name = smhKey,
             meta = meta,
             conflictStrategy = conflictStrategy,
-            filesize = filesize
+            filesize = filesize,
+            uploadRequestBody = uploadRequestBody
         )
     }
 
@@ -114,7 +107,7 @@ class TransferApiProxy(
                 listOf(it.value)
             })
 
-            putRequest.requestURL = "${SMHService.getProtocol()}://${initUpload.domain}${initUpload.path}"
+            putRequest.requestURL = "${smhCollection.getProtocol()}://${initUpload.domain}${initUpload.path}"
             putRequest.requestHeaders["Host"] = listOf(initUpload.domain)
 
             putRequest.progressListener = cosXmlProgressListener
@@ -124,17 +117,32 @@ class TransferApiProxy(
         }.takeIf { it.httpCode in 200..299 }?.eTag
     }
 
-    suspend fun confirmUpload(confirmKey: String, crc64: String?): ConfirmUpload {
-        return smhCollection.confirmUpload(confirmKey, crc64)
+    suspend fun confirmUpload(
+        confirmKey: String,
+        crc64: String?,
+        labels: List<String>? = null,
+        category: String? = null,
+        localCreationTime: String? = null,
+        localModificationTime: String? = null,
+    ): ConfirmUpload {
+        return smhCollection.confirmUpload(
+            confirmKey = confirmKey,
+            crc64 = crc64,
+            labels = labels,
+            category = category,
+            localCreationTime = localCreationTime,
+            localModificationTime = localModificationTime
+        )
     }
 
-    suspend fun publicInitMultipartUpload(smhKey: String, meta: Map<String, String>? = null, conflictStrategy: ConflictStrategy? = null, filesize: Long? = null): InitUpload {
+    suspend fun publicInitMultipartUpload(smhKey: String, meta: Map<String, String>? = null, conflictStrategy: ConflictStrategy? = null, filesize: Long? = null, uploadRequestBody: UploadRequestBody? = null,): InitUpload {
 
         return smhCollection.publicInitMultipartUpload(
             name = smhKey,
             meta = meta,
             conflictStrategy = conflictStrategy,
-            filesize = filesize
+            filesize = filesize,
+            uploadRequestBody = uploadRequestBody
         )
     }
 
@@ -247,7 +255,7 @@ class TransferApiProxy(
         request.requestHeaders = initUpload.headers.mapValues {
             listOf(it.value)
         }
-        request.requestURL = "${SMHService.getProtocol()}://${initUpload.domain}${initUpload.path}?partNumber=${partNumber}&uploadId=${initUpload.uploadId}"
+        request.requestURL = "${smhCollection.getProtocol()}://${initUpload.domain}${initUpload.path}?partNumber=${partNumber}&uploadId=${initUpload.uploadId}"
         request.requestHeaders["Host"] = listOf(initUpload.domain)
         request.progressListener = cosXmlProgressListener
         requestReference?.set(request)
@@ -381,7 +389,7 @@ class TransferApiProxy(
             return request
         }
 
-        request.requestURL = "${SMHService.getProtocol()}://${initUpload.domain}${initUpload.path}?partNumber=${partNumber}&uploadId=${initUpload.uploadId}"
+        request.requestURL = "${smhCollection.getProtocol()}://${initUpload.domain}${initUpload.path}?partNumber=${partNumber}&uploadId=${initUpload.uploadId}"
         request.requestHeaders["Host"] = listOf(initUpload.domain)
 
         request.progressListener = cosXmlProgressListener
@@ -467,10 +475,6 @@ class TransferApiProxy(
 
     fun cancel(request: CosXmlRequest) {
         cosService.cancel(request)
-    }
-
-    fun cancel(request: SMHRequest) {
-
     }
 
     suspend fun abortMultiUpload(confirmKey: String) {
